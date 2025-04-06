@@ -1,0 +1,101 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel Clear
+#pragma kernel CalculateLOD
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+/*struct VoxelData{
+    float3 col;
+};*/
+#include "Assets/LearnURP/VXGI/voxelData.hlsl"
+
+int voxTexSize;
+RWStructuredBuffer<VoxelData> VoxelTexture; // 表面是1维，实际是三维
+
+// 清除、初始化
+[numthreads(8,8,8)]
+void Clear (uint3 id : SV_DispatchThreadID)
+{
+    int idx = visitVoxIndex(id, voxTexSize);
+    VoxelTexture[idx].flags.xyz = uint3(0, 0, 0);
+    VoxelTexture[idx].col.xyz = 0;
+    //VoxelTexture[idx].col.xyz = float3(id.x / 256.0f, id.y / 256.0f, id.z / 256.0f);
+}
+
+// 计算LOD
+int currLodLevel;
+int lastOffset;
+int offset;
+int currVoxTexSize;
+
+[numthreads(8,8,8)]
+void CalculateLOD(uint3 id : SV_DispatchThreadID)
+{
+    // 上一级的大小
+    int lastVoxTexSize = currVoxTexSize * 2;
+    
+    // 用于采样上一级的坐标
+    uint3 baseId = id * 2;
+    // 该体素存在，上一级8个中有多少个是存在的
+    int voxExist = 0;
+    // 颜色之和
+    float3 colSum = 0;
+
+    // 开始算8个位置
+    int baseIdx[8];
+    
+    uint3 baseId0 = uint3(baseId.x, baseId.y, baseId.z);
+    baseIdx[0] = visitVoxIndex(baseId0, lastVoxTexSize) + lastOffset;
+    
+    uint3 baseId1 = uint3(baseId.x + 1, baseId.y, baseId.z);
+    baseIdx[1] = visitVoxIndex(baseId1, lastVoxTexSize) + lastOffset;
+    
+    uint3 baseId2 = uint3(baseId.x + 1, baseId.y, baseId.z + 1);
+    baseIdx[2] = visitVoxIndex(baseId2, lastVoxTexSize) + lastOffset;
+    
+    uint3 baseId3 = uint3(baseId.x, baseId.y, baseId.z + 1);
+    baseIdx[3] = visitVoxIndex(baseId3, lastVoxTexSize) + lastOffset;
+
+    
+    uint3 baseId4 = uint3(baseId.x, baseId.y + 1, baseId.z);
+    baseIdx[4] = visitVoxIndex(baseId4, lastVoxTexSize) + lastOffset;
+    
+    uint3 baseId5 = uint3(baseId.x + 1, baseId.y + 1, baseId.z);
+    baseIdx[5] = visitVoxIndex(baseId5, lastVoxTexSize) + lastOffset;
+    
+    uint3 baseId6 = uint3(baseId.x + 1, baseId.y + 1, baseId.z + 1);
+    baseIdx[6] = visitVoxIndex(baseId6, lastVoxTexSize) + lastOffset;
+    
+    uint3 baseId7 = uint3(baseId.x, baseId.y + 1, baseId.z + 1);
+    baseIdx[7] = visitVoxIndex(baseId7, lastVoxTexSize) + lastOffset;
+
+    for (int i = 0; i < 8; ++i)
+    {
+        if (VoxelTexture[baseIdx[i]].flags.x != 0){
+            voxExist += VoxelTexture[baseIdx[i]].flags.x;
+            colSum += VoxelTexture[baseIdx[i]].col * (float)VoxelTexture[baseIdx[i]].flags.x;
+        }
+    }
+
+    int currIdx = offset + visitVoxIndex(id, currVoxTexSize);
+    if (voxExist != 0){
+        VoxelTexture[currIdx].flags.x = voxExist;
+        VoxelTexture[currIdx].col = colSum / voxExist;
+    }else
+    {
+        VoxelTexture[currIdx].flags.x = 0;
+        VoxelTexture[currIdx].col = 0;
+    }
+
+    // debug
+    /*VoxelTexture[currIdx].flags.x = 1;
+    VoxelTexture[currIdx].col = colSum / 8;*/
+    
+    // debug:
+    //VoxelTexture[currIdx].flags.x = 1;
+    /*if (id.x < currVoxTexSize && id.y < currVoxTexSize && id.z < currVoxTexSize)
+        VoxelTexture[currIdx].col = 1;
+    else VoxelTexture[currIdx].col = 0;*/
+    //VoxelTexture[currIdx].col = float3(id) / float(currVoxTexSize);
+    //AllMemoryBarrierWithGroupSync();
+}

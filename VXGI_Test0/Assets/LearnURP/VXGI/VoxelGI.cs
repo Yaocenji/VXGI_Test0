@@ -1,0 +1,153 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Serialization;
+using UnityEngine.UI;
+
+[ExecuteAlways]
+public class VoxelGI : MonoBehaviour
+{
+    // 单例
+    public static VoxelGI instance;
+    // 体素范围：以摄像机为中心的正方体
+    // 设置范围大小
+    [Header("体素分辨率")]
+    public int voxTexSize = 256;
+    [Header("体素大小")] 
+    public float voxSize = 0.125f;
+    [Header("LOD级数")]
+    [Range(1, 8)]
+    public int lodLevels = 5;
+
+    private float voxAreaSize
+    {
+        get
+        {
+            return voxTexSize * voxSize;
+        }
+    }
+    public int voxNumber {
+        get
+        {
+            int ans = 0;
+            int curTexSize = voxTexSize;
+            for (int i = 0; i < lodLevels; i++)
+            {
+                ans += curTexSize * curTexSize * curTexSize;
+                curTexSize /= 2;
+            }
+            return ans;
+        }
+    }
+    // 初始化3d体素纹理的计算着色器
+    public ComputeShader manageVoxelDataCS;
+    // 设置三维纹理的大小
+    // 摄像机位置
+    private Transform camTrans;
+
+    private Vector3 LookUpPos;
+    private Vector3 LookForwardPos;
+    private Vector3 LookRightPos;
+    // 三个摄像机的transform
+    public Transform LookUpTrans;
+    public Transform LookForwardTrans;
+    public Transform LookRightTrans;
+    // 三个方向的view矩阵
+    private Matrix4x4 LookUp;
+    private Matrix4x4 LookForward;
+    private Matrix4x4 LookRight;
+    // 正交变换阵
+    private Matrix4x4 OrthoTrans;
+    // 三个变量的int索引
+    private int upMatIdx, forwardMatIdx, rightMatIdx;
+    private int camPosIdx;
+    // 一张三维纹理（表面是三维纹理，实际上是一维的计算buffer）
+    public ComputeBuffer voxelBuffer;
+    
+    void Start()
+    {
+        // 单例引用
+        instance = this;
+        // 初始化体素网格信息
+        int initKernel = manageVoxelDataCS.FindKernel("Clear");
+        Debug.Log(voxNumber);
+        voxelBuffer = new ComputeBuffer(voxNumber, 24);
+        Graphics.SetRandomWriteTarget(1, voxelBuffer, false);
+        manageVoxelDataCS.SetBuffer(initKernel, "VoxelTexture", voxelBuffer);
+        manageVoxelDataCS.SetInt("voxTexSize", voxTexSize);
+        manageVoxelDataCS.Dispatch(initKernel, voxTexSize / 8, voxTexSize / 8, voxTexSize / 8);
+        Shader.SetGlobalInt("voxTexSize", voxTexSize);
+        Shader.SetGlobalFloat("voxSize", voxSize);
+        Shader.SetGlobalBuffer("VoxelTexture", voxelBuffer);
+        // 初始化要用的矩阵
+        LookUp = new Matrix4x4();
+        LookForward = new Matrix4x4();
+        LookRight = new Matrix4x4();
+        OrthoTrans = Matrix4x4.Ortho(-voxAreaSize / 2, voxAreaSize / 2, 
+                                -voxAreaSize / 2, voxAreaSize / 2, 
+                                    0, voxAreaSize);
+        //OrthoTrans = Camera.main.projectionMatrix;
+        Shader.SetGlobalMatrix("VoxelAreaOrthoMat", GL.GetGPUProjectionMatrix(OrthoTrans, true));
+        upMatIdx = Shader.PropertyToID("LookUpViewMat");
+        forwardMatIdx = Shader.PropertyToID("LookForwardViewMat");
+        rightMatIdx = Shader.PropertyToID("LookRightViewMat");
+        camPosIdx = Shader.PropertyToID("manualCameraPos");
+        // 跟踪主摄
+        camTrans = Camera.main.transform;
+    }
+
+    void Update()
+    {
+        // 准备向量
+        /*Vector3 unitZ = camTrans.forward;
+        unitZ.y = 0;
+        unitZ.Normalize();
+        Vector3 unitX = Vector3.Cross(Vector3.up, unitZ);
+        unitX.Normalize();
+        Vector3 unitY = Vector3.up;
+        unitY.Normalize();*/
+        
+        // 准备位置
+        LookUpPos = LookForwardPos = LookRightPos = camTrans.position;
+        Vector3 camPos = LookUpPos;
+        LookUpPos.y -= voxAreaSize / 2;
+        LookForwardPos.z -= voxAreaSize / 2;
+        LookRightPos.x -= voxAreaSize / 2;
+        
+        // 更改
+        LookUpTrans.position = LookUpPos;
+        LookForwardTrans.position = LookForwardPos;
+        LookRightTrans.position = LookRightPos;
+        LookUpTrans.LookAt(camPos, Vector3.forward);
+        LookForwardTrans.LookAt(camPos, Vector3.up);
+        LookRightTrans.LookAt(camPos, Vector3.up);
+        
+        // 准备矩阵
+        LookUp = View(LookUpTrans);
+        LookForward = View(LookForwardTrans);
+        LookRight = View(LookRightTrans);
+        
+        Shader.SetGlobalMatrix(upMatIdx, LookUp);
+        Shader.SetGlobalMatrix(forwardMatIdx, LookForward);
+        Shader.SetGlobalMatrix(rightMatIdx, LookRight);
+        Shader.SetGlobalVector(camPosIdx, camTrans.position);
+
+        /*var viewMatrix = View(camTrans);
+        Debug.Log("Cam:" + Camera.main.worldToCameraMatrix);
+        Debug.Log("My: " + viewMatrix);*/
+    }
+    // 根据transform计算view矩阵（并非lookat）
+    Matrix4x4 View(Transform tf)
+    {
+        var view = Matrix4x4.Rotate(Quaternion.Inverse(tf.rotation)) *
+                   Matrix4x4.Translate(-tf.position);
+        if (SystemInfo.usesReversedZBuffer)
+        {
+            view.m20 = -view.m20;
+            view.m21 = -view.m21;
+            view.m22 = -view.m22;
+            view.m23 = -view.m23;
+        }
+        return view;
+    }
+}

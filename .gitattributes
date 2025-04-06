@@ -1,0 +1,2 @@
+VXGI_Test0/Assets/LearnURP/VXGI/voxelMesh.asset filter=lfs diff=lfs merge=lfs -text
+*.asset filter=lfs diff=lfs merge=lfs -text

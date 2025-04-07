@@ -20,11 +20,6 @@ Shader "LearnURP/Voxelization"
         #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
         #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
         
-        // 场景体素buffer
-        //除了贴图外，要暴露在Inspector面板上的变量都需要缓存到CBUFFER中
-        /*struct VoxelData{
-            float3 col;
-        };*/
         
         #include "Assets/LearnURP/VXGI/voxelData.hlsl"
         
@@ -58,6 +53,9 @@ Shader "LearnURP/Voxelization"
             #pragma geometry geom
             #pragma fragment frag
 
+            #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN      // URP 主光阴影、联机阴影、屏幕空间阴影
+            #pragma multi_compile_fragment _ _SHADOWS_SOFT      // URP 软阴影
+
             struct Attributes
             {
                 float4 positionOS : POSITION;
@@ -72,6 +70,7 @@ Shader "LearnURP/Voxelization"
                 float3 viewDirWS : TEXCOORD1;
                 float3 normalWS : TEXCOORD2;
                 float3 positionWS : TEXCOORD3;
+                float4 shadowCoord : TEXCOORD4;
             };
 
             struct Varings
@@ -81,6 +80,7 @@ Shader "LearnURP/Voxelization"
                 float3 viewDirWS : TEXCOORD1;
                 float3 normalWS : TEXCOORD2;
                 float4 positionWS : TEXCOORD3;  // xyz表示世界空间位置，w表示世界空间深度（基于对应的正交投影面）
+                float4 shadowCoord : TEXCOORD4;
             };
 
             TEXTURE2D(_BaseMap);
@@ -98,6 +98,7 @@ Shader "LearnURP/Voxelization"
                 OUT.normalWS = normalInputs.normalWS;
                 OUT.uv=TRANSFORM_TEX(IN.uv,_BaseMap);
                 OUT.positionWS = positionInputs.positionWS;
+                OUT.shadowCoord = GetShadowCoord(positionInputs);
                 return OUT;
             }
             // 几何着色器
@@ -133,6 +134,7 @@ Shader "LearnURP/Voxelization"
                     OUT.viewDirWS = IN[i].viewDirWS;
                     OUT.uv = IN[i].uv;
                     OUT.positionWS = float4(IN[i].positionWS, 0.0f);
+                    OUT.shadowCoord = IN[i].shadowCoord;
 
                     // 计算深度
                     if (projDir == 0)
@@ -152,8 +154,8 @@ Shader "LearnURP/Voxelization"
             {
                 // 先进行正常的渲染
                 // sample the texture and color
-                half4 baseMap = Gamma22ToLinear(SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv));
-                half4 specularColor = Gamma22ToLinear(_SpecularColor);
+                half4 baseMap = (SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv));
+                half4 specularColor = (_SpecularColor);
                 
                 Light light = GetMainLight();
                 float3 lightDirWS = light.direction;
@@ -166,13 +168,16 @@ Shader "LearnURP/Voxelization"
                 half3 specular = light.color * specularColor.rgb * pow(NdotH, _Smoothness);
                 
                 float3 color = diffuse + specular;
+                float shadow = MainLightRealtimeShadow(IN.shadowCoord);
+                color *= shadow;
+                color = (color);
 
                 // 根据世界空间位置写入VoxelTexrure
                 // 计算VoxelTexture所需id
                 uint3 id = getId(manualCameraPos, IN.positionWS, voxTexSize, voxSize);
                 VIS_VOX_IDX(id);
 
-                VoxelTexture[visitVoxIndex(id, voxTexSize)].col = LinearToGamma22(color);
+                VoxelTexture[visitVoxIndex(id, voxTexSize)].col = color;
                 VoxelTexture[visitVoxIndex(id, voxTexSize)].flags.x = 1;
                 
                 // debug
@@ -186,5 +191,6 @@ Shader "LearnURP/Voxelization"
         }
         UsePass "Universal Render Pipeline/Lit/DepthOnly"
         UsePass "Universal Render Pipeline/Lit/DepthNormals"
+        UsePass "Universal Render Pipeline/Lit/ShadowCaster"    // 产生投影
     }
 }

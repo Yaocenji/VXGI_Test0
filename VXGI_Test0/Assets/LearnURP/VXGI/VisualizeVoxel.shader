@@ -7,6 +7,7 @@ Shader "LearnURP/VisualizeVoxel"
         _SpecularColor("Specular Color",Color)=(1,1,1,1)
         _Smoothness("Smoothness", Float) = 0.5
         _LodLevel("Displayed Lod Level", Int) = 2
+        _Visualize("Enable Visualize Voxel", Int) = 1
         // _VoxelData("Voxel Data", 3D) = "black"{}
     }
     SubShader
@@ -34,6 +35,7 @@ Shader "LearnURP/VisualizeVoxel"
         float voxSize;    // 体素大小边长 默认是0.125 1/8
         float3 manualCameraPos;
         int _LodLevel;   // 当前采样的lod级别
+        int _Visualize;
         CBUFFER_END
         
         ENDHLSL
@@ -102,6 +104,7 @@ Shader "LearnURP/VisualizeVoxel"
             [maxvertexcount(54)]
             void geom (triangle VertexToGeometry IN[3], inout TriangleStream<Varings> triStream)
             {
+                if (_Visualize == 0) return;
                 for (int i = 0; i < 3 ; i ++)
                 {
                     uint3 id = getId(manualCameraPos, IN[i].positionWS, voxTexSize, voxSize);

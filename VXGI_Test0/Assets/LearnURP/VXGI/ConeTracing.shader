@@ -54,6 +54,8 @@ Shader "LearnURP/ConeTracing"
             #pragma target 4.5
             #pragma vertex vert
             #pragma fragment frag
+            #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN      // URP 主光阴影、联机阴影、屏幕空间阴影
+            #pragma multi_compile_fragment _ _SHADOWS_SOFT      // URP 软阴影
 
             struct Attributes
             {
@@ -71,6 +73,7 @@ Shader "LearnURP/ConeTracing"
                 float3 normalWS : TEXCOORD2;
                 float3 positionWS : TEXCOORD3;
                 float4 tangentWS : TEXCOORD4;
+                float4 shadowCoord : TEXCOORD5;
             };
 
             TEXTURE2D(_BaseMap);
@@ -90,6 +93,7 @@ Shader "LearnURP/ConeTracing"
                 OUT.positionWS = positionInputs.positionWS;
                 OUT.tangentWS.xyz = normalInputs.tangentWS;
                 OUT.tangentWS.w = IN.tangentOS.w;
+                OUT.shadowCoord = GetShadowCoord(positionInputs);
                 return OUT;
             }
             // 片元着色器
@@ -102,8 +106,8 @@ Shader "LearnURP/ConeTracing"
                 
                 // 先进行正常的渲染
                 // sample the texture and color
-                half4 baseMap = Gamma22ToLinear(SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv));
-                half4 specularColor = Gamma22ToLinear(_SpecularColor);
+                half4 baseMap = (SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv));
+                half4 specularColor = (_SpecularColor);
                 
                 Light light = GetMainLight();
                 float3 lightDirWS = light.direction;
@@ -114,6 +118,10 @@ Shader "LearnURP/ConeTracing"
                 float3 halfVec = SafeNormalize(normalize(lightDirWS) + normalize(viewDirWS));
                 half NdotH = saturate(dot(normalize(IN.normalWS), halfVec));
                 half3 specular = light.color * specularColor.rgb * pow(NdotH, _Smoothness);
+
+                float3 color = diffuse;// + specular;
+                float shadow = MainLightRealtimeShadow(IN.shadowCoord);
+                color *= shadow;
 
                 // 计算圆锥体radiance
                 // 7个60°圆锥体，两两相切组成
@@ -138,24 +146,31 @@ Shader "LearnURP/ConeTracing"
                 dir[4] = TransformTangentToWorld(dir[4], T2W_MATRIX);
                 dir[5] = TransformTangentToWorld(dir[5], T2W_MATRIX);
                 dir[6] = TransformTangentToWorld(dir[6], T2W_MATRIX);
-
+                
+                //color += VoxelTexture[visIdxLODById(voxTexSize, 0, id)].col;
+                float3 i_color = 0;
                 // 沿着七个圆锥方向步进
                 float3 marchPos[7];
                 for (int i = 0; i < 7; ++i){
-                    marchPos[i] = IN.positionWS;    // 初始化
+                    marchPos[i] = IN.positionWS + 0.415 * voxSize * dir[i];    // 初始化
                     // 步进
                     // 初始步进距离：根号3 / 2 * 最小体素边长
                     // 每次步进都将步进距离翻倍
                     float marchDist = 1.73205 / 2.0 * voxSize;
                     // 每次步进，访问LOD级别都增大
-                    int lodLevel = 0;
-                    /*for (int i = 0; i < 5; ++i)
+                    for (int lodLevel = 0; lodLevel < 5; ++lodLevel)
                     {
-                        
-                    }*/
+                        marchPos[i] += marchDist * dir[i];
+                        uint3 curr_id = getId(manualCameraPos, marchPos[i], voxTexSize, voxSize);
+                        i_color += VoxelTexture[visIdxLODById(voxTexSize, lodLevel, curr_id)].col;
+
+                        marchDist *= 2;
+                    }
+                    
                 }
-                
-                float3 color = VoxelTexture[visIdxLODById(voxTexSize, 2, id)].col;
+                i_color /= 42.0f;
+
+                color += i_color;
 
                 return float4(color.xyz, 1);
             }
@@ -163,5 +178,6 @@ Shader "LearnURP/ConeTracing"
         }
         UsePass "Universal Render Pipeline/Lit/DepthOnly"
         UsePass "Universal Render Pipeline/Lit/DepthNormals"
+        UsePass "Universal Render Pipeline/Lit/ShadowCaster"    // 产生投影
     }
 }

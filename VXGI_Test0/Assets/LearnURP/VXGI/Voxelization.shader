@@ -6,6 +6,8 @@ Shader "LearnURP/Voxelization"
         _BaseColor("Base Color",Color)=(1,1,1,1)
         _SpecularColor("Specular Color",Color)=(1,1,1,1)
         _Smoothness("Smoothness", Float) = 0.5
+        _EmitionCol("Emit Color",Color)=(0,0, 0, 0)
+        _EmitionStrength("Emit Strength", Float) = 1.0
         // _VoxelData("Voxel Data", 3D) = "black"{}
     }
     SubShader
@@ -28,6 +30,8 @@ Shader "LearnURP/Voxelization"
         half4 _BaseColor;
         half4 _SpecularColor;
         half _Smoothness;
+        half4 _EmitionCol;
+        float _EmitionStrength;
         int voxTexSize; // 体素网格边长（一般是256）
         float voxSize;    // 体素大小边长 默认是0.125 1/8
         matrix<float, 4, 4> LookUpViewMat;
@@ -170,7 +174,8 @@ Shader "LearnURP/Voxelization"
                 float3 color = diffuse + specular;
                 float shadow = MainLightRealtimeShadow(IN.shadowCoord);
                 color *= shadow;
-                color = (color);
+                // 自发光
+                color += _EmitionCol * _EmitionStrength;
 
                 // 根据世界空间位置写入VoxelTexrure
                 // 计算VoxelTexture所需id

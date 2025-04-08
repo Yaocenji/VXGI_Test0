@@ -63,7 +63,7 @@ public class VoxelMipmapRenderFeature : ScriptableRendererFeature
             context.ExecuteCommandBuffer(cmd);
             cmd.Clear();
             cmd.Release();
-            context.Submit();
+            //context.Submit();
         }
 
         // Cleanup any allocated resources that were created during the execution of this render pass.

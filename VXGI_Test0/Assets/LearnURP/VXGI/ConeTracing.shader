@@ -6,6 +6,8 @@ Shader "LearnURP/ConeTracing"
         _BaseColor("Base Color",Color)=(1,1,1,1)
         _SpecularColor("Specular Color",Color)=(1,1,1,1)
         _Smoothness("Smoothness", Float) = 0.5
+        _EmitionCol("Emit Color",Color)=(0,0, 0, 0)
+        _EmitionStrength("Emit Strength", Float) = 1.0
         // _VoxelData("Voxel Data", 3D) = "black"{}
     }
     SubShader
@@ -33,6 +35,8 @@ Shader "LearnURP/ConeTracing"
         half4 _BaseColor;
         half4 _SpecularColor;
         half _Smoothness;
+        half4 _EmitionCol;
+        float _EmitionStrength;
         int voxTexSize; // 体素网格边长（一般是256）
         float voxSize;    // 体素大小边长 默认是0.125 1/8
         matrix<float, 4, 4> LookUpViewMat;
@@ -96,12 +100,28 @@ Shader "LearnURP/ConeTracing"
                 OUT.shadowCoord = GetShadowCoord(positionInputs);
                 return OUT;
             }
+
+            float Clamp(float x, float l, float r)
+            {
+                if (x > r)
+                    return r;
+                if (x < l)
+                    return l;
+                return x;
+            }
+            // 噪声，每帧调用结果都不同
+            float2 InterleavedGradientNoise(float3 v) {
+                return float2(
+                    frac(52.9829189f * frac((v.x * 0.6711056f + v.y * 0.0583715f) * frac(v.z * 0.6558879f + _Time.z * 0.0583715f))),
+                    frac(19.5246817f * frac((v.y * 0.8798958f + v.z * 0.4791113579f) * frac(v.x * 0.6558879f + _Time.z * 0.0583715f)))
+                    );
+            }
             // 片元着色器
             float4 frag (Varings IN) : SV_Target
             {
                 // 根据世界空间位置读取VoxelTexrure
                 // 计算VoxelTexture所需id
-                uint3 id = getId(manualCameraPos, IN.positionWS, voxTexSize, voxSize);
+                uint3 id = getId(GetCameraPositionWS(), IN.positionWS, voxTexSize, voxSize);
                 VIS_VOX_IDX(id);
                 
                 // 先进行正常的渲染
@@ -113,7 +133,9 @@ Shader "LearnURP/ConeTracing"
                 float3 lightDirWS = light.direction;
                 float3 viewDirWS = GetCameraPositionWS() - IN.positionWS;
 
-                half3 diffuse = baseMap.xyz*_BaseColor*LightingLambert(light.color, light.direction, IN.normalWS);
+                half3 albedo = baseMap.xyz*_BaseColor;
+
+                half3 diffuse = albedo * LightingLambert(light.color, light.direction, IN.normalWS);
                 
                 float3 halfVec = SafeNormalize(normalize(lightDirWS) + normalize(viewDirWS));
                 half NdotH = saturate(dot(normalize(IN.normalWS), halfVec));
@@ -123,6 +145,9 @@ Shader "LearnURP/ConeTracing"
                 float shadow = MainLightRealtimeShadow(IN.shadowCoord);
                 color *= shadow;
 
+                // 自发光
+                color += _EmitionCol * _EmitionStrength;
+
                 // 计算圆锥体radiance
                 // 7个60°圆锥体，两两相切组成
 
@@ -131,46 +156,117 @@ Shader "LearnURP/ConeTracing"
                 real3x3 T2W_MATRIX = CreateTangentToWorld(IN.normalWS, IN.tangentWS.xyz, IN.tangentWS.w);
                 //切线空间采样方向（七个圆锥体的中心向量）
                 float3 dir[7];
-                dir[0] = float3(0, 1, 0);
-                dir[1] = normalize(float3(3, 2, 1.73205));
-                dir[2] = normalize(float3(0, 1, 1.73205));
-                dir[3] = normalize(float3(-3, 2, 1.73205));
-                dir[4] = normalize(float3(-3, 2, -1.73205));
-                dir[5] = normalize(float3(0, 1, -1.73205));
-                dir[6] = normalize(float3(3, 2, -1.73205));
+                dir[0] = float3( 0,  0      , 1);
+                dir[1] = float3( 3,  1.73205, 2);
+                dir[2] = float3( 0,  1.73205, 1);
+                dir[3] = float3(-3,  1.73205, 2);
+                dir[4] = float3(-3, -1.73205, 2);
+                dir[5] = float3( 0, -1.73205, 1);
+                dir[6] = float3( 3, -1.73205, 2);
+
+                // 添加随机偏移
+                float2 randDir = 4.0f * InterleavedGradientNoise(IN.positionWS * 4.6548792) - 2.0f;
+                //randDir = 0;
+                for (int i = 0; i < 7; ++i)
+                    dir[i] = normalize(dir[i] + float3(randDir.xy, 0));
+                
                 // 将其变换为：世界空间
-                dir[0] = TransformTangentToWorld(dir[0], T2W_MATRIX);
-                dir[1] = TransformTangentToWorld(dir[1], T2W_MATRIX);
-                dir[2] = TransformTangentToWorld(dir[2], T2W_MATRIX);
-                dir[3] = TransformTangentToWorld(dir[3], T2W_MATRIX);
-                dir[4] = TransformTangentToWorld(dir[4], T2W_MATRIX);
-                dir[5] = TransformTangentToWorld(dir[5], T2W_MATRIX);
-                dir[6] = TransformTangentToWorld(dir[6], T2W_MATRIX);
+                dir[0] = mul(dir[0], T2W_MATRIX);
+                dir[1] = mul(dir[1], T2W_MATRIX);
+                dir[2] = mul(dir[2], T2W_MATRIX);
+                dir[3] = mul(dir[3], T2W_MATRIX);
+                dir[4] = mul(dir[4], T2W_MATRIX);
+                dir[5] = mul(dir[5], T2W_MATRIX);
+                dir[6] = mul(dir[6], T2W_MATRIX);
                 
                 //color += VoxelTexture[visIdxLODById(voxTexSize, 0, id)].col;
                 float3 i_color = 0;
                 // 沿着七个圆锥方向步进
                 float3 marchPos[7];
+                // 体素原点
+                float3 zeroPos = GetCameraPositionWS() - (voxTexSize * voxSize / 2.0f).xxx;
+                
                 for (int i = 0; i < 7; ++i){
-                    marchPos[i] = IN.positionWS + 0.415 * voxSize * dir[i];    // 初始化
+                    float3 cur_color = 0;
+                    marchPos[i] = IN.positionWS;// + 0.415 * voxSize * dir[i];    // 初始化
                     // 步进
                     // 初始步进距离：根号3 / 2 * 最小体素边长
                     // 每次步进都将步进距离翻倍
                     float marchDist = 1.73205 / 2.0 * voxSize;
+                    // 每次步进，当前体素边长都翻倍
+                    float currVoxSize = voxSize;
+                    // 每次步进，当前体素体积都*8
+                    int currVoxVol = 1;
+                    // 权重步进动态维护
+                    float weight = 1.0f;
                     // 每次步进，访问LOD级别都增大
                     for (int lodLevel = 0; lodLevel < 5; ++lodLevel)
                     {
+                        if (weight <= 0.01) break;
+                        
                         marchPos[i] += marchDist * dir[i];
-                        uint3 curr_id = getId(manualCameraPos, marchPos[i], voxTexSize, voxSize);
-                        i_color += VoxelTexture[visIdxLODById(voxTexSize, lodLevel, curr_id)].col;
 
+                        uint3 curr_id = getId(GetCameraPositionWS(), marchPos[i], voxTexSize, voxSize);
+
+                        /*
+                        // 计算当前体素的的中心点
+                        uint3 curID = id / int(pow(2, i));
+                        float3 voxCenterPos = zeroPos + curID * currVoxSize + 0.5f * currVoxSize;
+                        
+                        // 当前体素中心点投影到步进圆盘面的位置 与 步进中心点距离
+                        float dist0 = normalize(cross(voxCenterPos - marchPos[i], dir[i]));
+                        dist0 = Clamp(dist0, 0, currVoxSize);
+                        
+                        float h = sqrt(currVoxSize * currVoxSize - dist0 * dist0);
+                        float tri_area = h * dist0 / 2.0;
+
+                        float cosTheta = dist0 / currVoxSize;
+                        float Theta = 4 * acos(cosTheta);
+                        float sector_area = Theta * currVoxSize * currVoxSize / 8.0f;
+
+                        // 圆面积
+                        float circle_area = PI * currVoxSize * currVoxSize / 4.0f;
+                        // 相交面积
+                        float intersect_area = Clamp(sector_area - tri_area,
+                                                        0, circle_area);
+                        // 面积占比
+                        float area_ratio = intersect_area / circle_area;
+                        // 根据占比累加采样
+                        float currWeight = weight * area_ratio;
+                        */
+
+                        // 采样
+                        float3 tmp_col = 0;
+                        //float tmp_voxvol = 0;
+                        linearSampleInfo sampleInfo = sampleVoxLinear(GetCameraPositionWS(), marchPos[i], voxTexSize, voxSize, lodLevel);
+                        for (int j = 0; j < 8; ++j)
+                        {
+                            tmp_col += VoxelTexture[sampleInfo.visId[j]].col * sampleInfo.posWeight[j];
+                            //tmp_voxvol += (float)VoxelTexture[sampleInfo.visId[j]].flags.x * sampleInfo.posWeight[j];
+                        }
+                        float currWeight = 1.0 / 6.0;
+                        //currWeight = weight * (tmp_voxvol / currVoxVol);
+                        
+                        //cur_color += VoxelTexture[visIdxLODById(voxTexSize, lodLevel, curr_id)].col / 6.0f;
+                        
+                        cur_color += tmp_col * currWeight;
+                        //weight -= currWeight;
+                        
                         marchDist *= 2;
+                        currVoxSize *= 2;
+                        currVoxVol *= 8;
                     }
-                    
+                    /*if (weight > 0.01)
+                        cur_color /= 1.0f - saturate(weight);*/
+                    i_color += cur_color;
                 }
-                i_color /= 42.0f;
+                i_color /= 7.0f;
 
-                color += i_color;
+                // 部分吸收
+                color += i_color * albedo * 0.75 + i_color * 0.25;
+
+                // debug
+                //color = dir[0] * 0.5 + 0.5;
 
                 return float4(color.xyz, 1);
             }

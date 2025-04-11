@@ -15,7 +15,7 @@ Shader "LearnURP/ConeTracing"
         Tags { 
             "RenderPipeline" = "UniversalPipeline"
             "Queue"="Geometry"
-            "RenderType"="Opaque" 
+                "RenderType"="Opaque" 
         }
         HLSLINCLUDE
 

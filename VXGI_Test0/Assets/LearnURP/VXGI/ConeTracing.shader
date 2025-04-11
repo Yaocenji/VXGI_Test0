@@ -8,7 +8,7 @@ Shader "LearnURP/ConeTracing"
         _Smoothness("Smoothness", Float) = 0.5
         _EmitionCol("Emit Color",Color)=(0,0, 0, 0)
         _EmitionStrength("Emit Strength", Float) = 1.0
-        // _VoxelData("Voxel Data", 3D) = "black"{}
+        _WhiteNoise0("White Noise 0", 2D) = "white"{}
     }
     SubShader
     {
@@ -37,6 +37,8 @@ Shader "LearnURP/ConeTracing"
         half _Smoothness;
         half4 _EmitionCol;
         float _EmitionStrength;
+        float4 _WhiteNoise0_ST;
+        
         int voxTexSize; // 体素网格边长（一般是256）
         float voxSize;    // 体素大小边长 默认是0.125 1/8
         matrix<float, 4, 4> LookUpViewMat;
@@ -80,8 +82,8 @@ Shader "LearnURP/ConeTracing"
                 float4 shadowCoord : TEXCOORD5;
             };
 
-            TEXTURE2D(_BaseMap);
-            SAMPLER(sampler_BaseMap);
+            TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
+            TEXTURE2D(_WhiteNoise0); SAMPLER(sampler_WhiteNoise0);
             RWStructuredBuffer<VoxelData> VoxelTexture : register(u1); // 表面是1维，实际是三维
 
             // 顶点着色器
@@ -110,10 +112,16 @@ Shader "LearnURP/ConeTracing"
                 return x;
             }
             // 噪声，每帧调用结果都不同
-            float2 InterleavedGradientNoise(float3 v) {
+            float2 InterleavedGradientNoise2D(float2 v) {
                 return float2(
-                    frac(52.9829189f * frac((v.x * 0.6711056f + v.y * 0.0583715f) * frac(v.z * 0.6558879f + _Time.z * 0.0583715f))),
-                    frac(19.5246817f * frac((v.y * 0.8798958f + v.z * 0.4791113579f) * frac(v.x * 0.6558879f + _Time.z * 0.0583715f)))
+                    frac(52.9829189f * frac((v.x * 0.6711056f + v.y * 0.0583715f) * frac(v.y * 0.6558879f + (_Time.z) * 0.0583715f))),
+                    frac(19.5246817f * frac((v.y * 0.8798958f + v.x * 0.4791113579f) * frac(v.x * 0.6558879f + (_Time.z) * 0.0583715f)))
+                    );
+            }
+            float2 InterleavedGradientNoise3D(float3 v) {
+                return float2(
+                    frac(52.9829189f * frac((v.x * 0.6711056f + v.y * 0.0583715f) * frac(v.z * 0.6558879f + (_Time.z) * 0.0583715f))),
+                    frac(19.5246817f * frac((v.y * 0.8798958f + v.z * 0.4791113579f) * frac(v.x * 0.6558879f + (_Time.z) * 0.0583715f)))
                     );
             }
             // 片元着色器
@@ -165,7 +173,9 @@ Shader "LearnURP/ConeTracing"
                 dir[6] = float3( 3, -1.73205, 2);
 
                 // 添加随机偏移
-                float2 randDir = 4.0f * InterleavedGradientNoise(IN.positionWS * 4.6548792) - 2.0f;
+                float2 noiseUV0 = InterleavedGradientNoise3D(IN.positionWS * 4.6548792);
+                float2 noiseUV1 = InterleavedGradientNoise3D(IN.positionWS * 7.911131719);
+                float2 randDir = 4.0f * float2(SAMPLE_TEXTURE2D(_WhiteNoise0, sampler_WhiteNoise0, noiseUV0).x, SAMPLE_TEXTURE2D(_WhiteNoise0, sampler_WhiteNoise0, noiseUV1).x) - 2.0f;
                 //randDir = 0;
                 for (int i = 0; i < 7; ++i)
                     dir[i] = normalize(dir[i] + float3(randDir.xy, 0));
@@ -184,7 +194,6 @@ Shader "LearnURP/ConeTracing"
                 // 沿着七个圆锥方向步进
                 float3 marchPos[7];
                 // 体素原点
-                float3 zeroPos = GetCameraPositionWS() - (voxTexSize * voxSize / 2.0f).xxx;
                 
                 for (int i = 0; i < 7; ++i){
                     float3 cur_color = 0;
@@ -265,7 +274,8 @@ Shader "LearnURP/ConeTracing"
                 // 部分吸收
                 color += i_color * albedo * 0.75 + i_color * 0.25;
 
-                // debug
+                // debug 
+                //color = float3(SAMPLE_TEXTURE2D(_WhiteNoise0, sampler_WhiteNoise0, noiseUV0).xyz);
                 //color = dir[0] * 0.5 + 0.5;
 
                 return float4(color.xyz, 1);

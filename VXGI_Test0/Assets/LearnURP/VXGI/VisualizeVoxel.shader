@@ -212,8 +212,8 @@ Shader "LearnURP/VisualizeVoxel"
             {
                 // 根据世界空间位置写入VoxelTexrure
                 // 计算VoxelTexture所需id
-                float3 zeroPos = manualCameraPos - (voxTexSize * voxSize / 2.0f).xxx;
-                //float3 id = (IN.positionWS - zeroPos) / voxSize;
+                /*float3 zeroPos = manualCameraPos - (voxTexSize * voxSize / 2.0f).xxx;
+                //float3 id = (IN.positionWS - zeroPos) / voxSize;*/
                 uint3 id = getId(manualCameraPos, IN.positionWS, voxTexSize, voxSize);
                 id = IN.NormalizedID * voxTexSize;
 

@@ -5,10 +5,17 @@ struct VoxelData{
     float3 col;     // 颜色
 };
 
+cbuffer UnityPerMaterial
+{
+};
+float3 zeroPos;
+
+
+
 // 根据世界空间位置，得到对应的最细体素三维坐标
 uint3 getId(float3 cameraPos, float3 targetPos, int voxTexSize, float voxSize)
 {
-    float3 zeroPos = cameraPos - (voxTexSize * voxSize / 2.0f).xxx;
+    //float3 zeroPos = cameraPos - (voxTexSize * voxSize / 2.0f).xxx;
     uint3 id = (targetPos - zeroPos) / voxSize;
     return id;
 }
@@ -64,7 +71,7 @@ struct linearSampleInfo
 // 根据世界空间坐标和给定LOD，返回三维空间采样
 linearSampleInfo sampleVoxLinear(float3 cameraPos, float3 targetPos, int voxTexSize, float voxSize, int lodlevel)
 {
-    float3 zeroPos = cameraPos - (voxTexSize * voxSize / 2.0f).xxx;
+    //float3 zeroPos = cameraPos - (voxTexSize * voxSize / 2.0f).xxx;
     uint3 id = (targetPos - zeroPos) / voxSize;
     
     int curTexSize = voxTexSize / int(pow(2, lodlevel));
@@ -143,6 +150,6 @@ linearSampleInfo sampleVoxLinear(float3 cameraPos, float3 targetPos, int voxTexS
         curTexSize /= 2;                                                    \
     int visId = id.x * curTexSize * curTexSize + id.y * curTexSize + id.z;
 
-#define GET_ID(cameraPos, targetPos, voxTexSize, voxSize)           \
+/*#define GET_ID(cameraPos, targetPos, voxTexSize, voxSize)           \
     float3 zeroPos = cameraPos - (voxTexSize * voxSize / 2.0f).xxx; \
-    uint3 id = ((targetPos - zeroPos) / voxSize).xxx;
+    uint3 id = ((targetPos - zeroPos) / voxSize).xxx;*/

@@ -63,6 +63,8 @@ public class VoxelGI : MonoBehaviour
     private int camPosIdx;
     // 一张三维纹理（表面是三维纹理，实际上是一维的计算buffer）
     public ComputeBuffer voxelBuffer;
+    // 体素零点
+    private Vector3 zeroPos;
     
     void Start()
     {
@@ -108,19 +110,25 @@ public class VoxelGI : MonoBehaviour
         unitY.Normalize();*/
         
         // 准备位置
-        LookUpPos = LookForwardPos = LookRightPos = camTrans.position;
-        Vector3 camPos = LookUpPos;
-        LookUpPos.y -= voxAreaSize / 2;
+        LookUpPos = LookForwardPos = LookRightPos = zeroPos;
+        Vector3 alignedCamPos = zeroPos;
+        alignedCamPos.x += voxAreaSize / 2;
+        alignedCamPos.y += voxAreaSize / 2;
+        alignedCamPos.z += voxAreaSize / 2;
+        /*LookUpPos.y -= voxAreaSize / 2;
         LookForwardPos.z -= voxAreaSize / 2;
-        LookRightPos.x -= voxAreaSize / 2;
+        LookRightPos.x -= voxAreaSize / 2;*/
+        LookUpPos.x += voxAreaSize / 2; LookUpPos.z += voxAreaSize / 2;
+        LookForwardPos.x += voxAreaSize / 2; LookForwardPos.y += voxAreaSize / 2;
+        LookRightPos.y += voxAreaSize / 2; LookRightPos.z += voxAreaSize / 2;
         
         // 更改
         LookUpTrans.position = LookUpPos;
         LookForwardTrans.position = LookForwardPos;
         LookRightTrans.position = LookRightPos;
-        LookUpTrans.LookAt(camPos, Vector3.forward);
-        LookForwardTrans.LookAt(camPos, Vector3.up);
-        LookRightTrans.LookAt(camPos, Vector3.up);
+        LookUpTrans.LookAt(alignedCamPos, Vector3.forward);
+        LookForwardTrans.LookAt(alignedCamPos, Vector3.up);
+        LookRightTrans.LookAt(alignedCamPos, Vector3.up);
         
         // 准备矩阵
         LookUp = View(LookUpTrans);
@@ -131,6 +139,16 @@ public class VoxelGI : MonoBehaviour
         Shader.SetGlobalMatrix(forwardMatIdx, LookForward);
         Shader.SetGlobalMatrix(rightMatIdx, LookRight);
         Shader.SetGlobalVector(camPosIdx, camTrans.position);
+
+        zeroPos = camTrans.position -
+                  new Vector3(voxTexSize * voxSize / 2.0f, voxTexSize * voxSize / 2.0f,
+                      voxTexSize * voxSize / 2.0f);
+        float unit = voxSize * Mathf.Pow(2, lodLevels - 1);
+        zeroPos.x = (int)(zeroPos.x / unit) * unit;
+        zeroPos.y = (int)(zeroPos.y / unit) * unit;
+        zeroPos.z = (int)(zeroPos.z / unit) * unit;
+        //zeroPos -= new Vector3(5.0f, 5.0f, 5.0f);
+        Shader.SetGlobalVector("zeroPos", zeroPos);
 
         /*var viewMatrix = View(camTrans);
         Debug.Log("Cam:" + Camera.main.worldToCameraMatrix);

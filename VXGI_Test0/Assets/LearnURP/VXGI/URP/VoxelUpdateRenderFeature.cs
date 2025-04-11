@@ -3,7 +3,8 @@ using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
 using UnityEngine.Serialization;
 
-public class VoxelRefreshRenderFeature : ScriptableRendererFeature
+// 功能：清空体素信息、渲染场景体素
+public class VoxelUpdateRenderFeature : ScriptableRendererFeature
 {
     // 体素范围：以摄像机为中心的正方体
     // 设置范围大小
@@ -37,18 +38,25 @@ public class VoxelRefreshRenderFeature : ScriptableRendererFeature
         
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
-            // 临时DrawSetting
-            //DrawingSettings drawSetting;
-            //drawSetting = new DrawingSettings(new ShaderTagId("UniversalForward"),
-                //new SortingSettings(Camera.main));
-            //FilteringSettings fs = FilteringSettings.defaultValue;
             
-            CommandBuffer cmd = CommandBufferPool.Get("clearVoxelData");
+            CommandBuffer cmd = CommandBufferPool.Get("updateVoxelData");
             cmd.DispatchCompute(manageVoxelDataCS, initKernel, VoxelGI.instance.voxTexSize / 8, VoxelGI.instance.voxTexSize / 8, VoxelGI.instance.voxTexSize / 8);
             context.ExecuteCommandBuffer(cmd);
             cmd.Clear();
             cmd.Release();
             context.Submit();
+            
+            
+            context.SetupCameraProperties(renderingData.cameraData.camera);
+            // 临时DrawSetting
+            DrawingSettings drawSetting = new DrawingSettings(new ShaderTagId("Voxelization"),
+                new SortingSettings(Camera.main));
+            FilteringSettings fs = new FilteringSettings(RenderQueueRange.all);
+            ScriptableCullingParameters cullingParameters;
+            renderingData.cameraData.camera.TryGetCullingParameters(false, out cullingParameters);
+            CullingResults cullResults = context.Cull(ref cullingParameters);
+            
+            context.DrawRenderers(cullResults, ref drawSetting, ref fs);
         }
 
         // Cleanup any allocated resources that were created during the execution of this render pass.
@@ -66,7 +74,7 @@ public class VoxelRefreshRenderFeature : ScriptableRendererFeature
         m_ScriptablePass = new VoxelRenderPass();
 
         // Configures where the render pass should be injected.
-        m_ScriptablePass.renderPassEvent = RenderPassEvent.BeforeRendering;
+        m_ScriptablePass.renderPassEvent = RenderPassEvent.BeforeRenderingOpaques;
 
         m_ScriptablePass.manageVoxelDataCS = manageVoxelDataCS;
     }

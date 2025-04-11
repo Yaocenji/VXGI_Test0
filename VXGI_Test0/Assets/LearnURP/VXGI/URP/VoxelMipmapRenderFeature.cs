@@ -17,17 +17,8 @@ public class VoxelMipmapRenderFeature : ScriptableRendererFeature
         public ComputeShader manageVoxelDataCS;
         private int mipmapKernel;
         
-        // 临时RT
-        static string rt_name = "_VoxelTextureTarget";
-        private static int rt_id = Shader.PropertyToID(rt_name);
-        
         public override void OnCameraSetup(CommandBuffer cmd, ref RenderingData renderingData)
         {
-            /*RenderTextureDescriptor descriptor = new RenderTextureDescriptor(VoxelGI.instance.voxTexSize, VoxelGI.instance.voxTexSize, RenderTextureFormat.Default, 0);
-            cmd.GetTemporaryRT(rt_id, descriptor);
-            ConfigureTarget(rt_id);
-            ConfigureClear(ClearFlag.All, Color.black);*/
-            
             // 初始化CS
             mipmapKernel = manageVoxelDataCS.FindKernel("CalculateLOD");
             manageVoxelDataCS.SetBuffer(mipmapKernel, "VoxelTexture", VoxelGI.instance.voxelBuffer);
@@ -36,12 +27,6 @@ public class VoxelMipmapRenderFeature : ScriptableRendererFeature
         
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
-            // 临时DrawSetting
-            //DrawingSettings drawSetting;
-            //drawSetting = new DrawingSettings(new ShaderTagId("UniversalForward"),
-                //new SortingSettings(Camera.main));
-            //FilteringSettings fs = FilteringSettings.defaultValue;
-            
             CommandBuffer cmd = CommandBufferPool.Get("mipmapVoxelData");
             int currVoxTexSize = VoxelGI.instance.voxTexSize / 2;
             int lastOffset = 0;
@@ -63,6 +48,7 @@ public class VoxelMipmapRenderFeature : ScriptableRendererFeature
             context.ExecuteCommandBuffer(cmd);
             cmd.Clear();
             cmd.Release();
+            context.Submit();
         }
 
         // Cleanup any allocated resources that were created during the execution of this render pass.
@@ -81,7 +67,7 @@ public class VoxelMipmapRenderFeature : ScriptableRendererFeature
         m_ScriptablePass = new VoxelRenderPass();
 
         // Configures where the render pass should be injected.
-        m_ScriptablePass.renderPassEvent = RenderPassEvent.AfterRendering;
+        m_ScriptablePass.renderPassEvent = RenderPassEvent.AfterRenderingOpaques;
 
         m_ScriptablePass.manageVoxelDataCS = manageVoxelDataCS;
     }

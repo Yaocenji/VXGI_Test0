@@ -41,6 +41,8 @@ Shader "LearnURP/ConeTracing"
         matrix<float, 4, 4> VoxelAreaOrthoMat;
         float3 manualCameraPos;
         //matrix<float, 4, 4> TESTMAT;
+
+        int _LodLevel;
         CBUFFER_END
         
         ENDHLSL
@@ -431,9 +433,22 @@ Shader "LearnURP/ConeTracing"
                 // 沿着七个圆锥方向步进
                 float3 marchPos[7];
                 // 体素原点
+
+                // 计算体素空间的包围盒
+                float3 voxelAABBMaxPos = zeroPos + voxTexSize * voxSize;
+
+                // debug
+                float3 dirColors[7];
+                float3 marchColors[7];
+                for (int i = 0; i < 7; ++i)
+                {
+                    marchColors[i] = 0;
+                }
                 
                 for (int i = 0; i < 7; ++i){
                     float3 cur_color = 0;
+                    dirColors[i] = 0;
+                    
                     marchPos[i] = IN.positionWS;// + 0.415 * voxSize * dir[i];    // 初始化
                     // 步进
                     // 初始步进距离：根号3 / 2 * 最小体素边长
@@ -446,11 +461,15 @@ Shader "LearnURP/ConeTracing"
                     // 权重步进动态维护
                     float weight = 1.0f;
                     // 每次步进，访问LOD级别都增大
-                    for (int lodLevel = 0; lodLevel < 5; ++lodLevel)
+                    for (int lodLevel = 0; lodLevel < _LodLevel; ++lodLevel)
                     {
                         if (weight <= 0.01) break;
                         
                         marchPos[i] += marchDist * dir[i];
+                        // 将步进位置框在AABB内
+                        marchPos[i].x = Clamp(marchPos[i].x, zeroPos.x, voxelAABBMaxPos.x);
+                        marchPos[i].y = Clamp(marchPos[i].y, zeroPos.y, voxelAABBMaxPos.y);
+                        marchPos[i].z = Clamp(marchPos[i].z, zeroPos.z, voxelAABBMaxPos.z);
 
                         uint3 curr_id = getId(GetCameraPositionWS(), marchPos[i], voxTexSize, voxSize);
 
@@ -483,19 +502,31 @@ Shader "LearnURP/ConeTracing"
 
                         // 采样
                         float3 tmp_col = 0;
-                        //float tmp_voxvol = 0;
-                        linearSampleInfo sampleInfo = sampleVoxLinear(GetCameraPositionWS(), marchPos[i], voxTexSize, voxSize, lodLevel);
+
+                        // TODO：将采样变成正确的插值采样
+                        /*linearSampleInfo sampleInfo = sampleVoxLinear(GetCameraPositionWS(), marchPos[i], voxTexSize, voxSize, lodLevel);
                         for (int j = 0; j < 8; ++j)
                         {
                             tmp_col += VoxelTexture[sampleInfo.visId[j]].col * sampleInfo.posWeight[j];
                             //tmp_voxvol += (float)VoxelTexture[sampleInfo.visId[j]].flags.x * sampleInfo.posWeight[j];
-                        }
-                        float currWeight = 1.0 / 6.0;
+                        }*/
+
+                        // 临时：现在不是插值采样
+                        uint3 idxx = (marchPos[i] - zeroPos) / voxSize;
+                        int curTexSize = voxTexSize / int(pow(2, lodLevel));
+                        uint3 curID;
+                        curID = idxx / int(pow(2, lodLevel));
+                        int tmpSize = voxTexSize * voxTexSize * voxTexSize;
+                        int visId = int(tmpSize * (8 - pow(0.125, lodLevel - 1))) / 7 + curID.x * curTexSize * curTexSize + curID.y * curTexSize + curID.z;
+                        tmp_col = VoxelTexture[visId].col;
+                        
+                        float currWeight = 1.0 / (_LodLevel - 1);
                         //currWeight = weight * (tmp_voxvol / currVoxVol);
                         
                         //cur_color += VoxelTexture[visIdxLODById(voxTexSize, lodLevel, curr_id)].col / 6.0f;
                         
                         cur_color += tmp_col * currWeight;
+                        marchColors[lodLevel] += tmp_col * currWeight;
                         //weight -= currWeight;
                         
                         marchDist *= 2;
@@ -505,14 +536,20 @@ Shader "LearnURP/ConeTracing"
                     /*if (weight > 0.01)
                         cur_color /= 1.0f - saturate(weight);*/
                     i_color += cur_color;
+                    dirColors[i] = cur_color;
                 }
                 i_color /= 7.0f;
 
                 // 部分吸收
-                color = i_color * albedo * 0.75 + i_color * 0.25;
+                color = i_color * albedo * 0.9 + i_color * 0.1;
 
-                // debug 
-                //color = float3(SAMPLE_TEXTURE2D(_WhiteNoise0, sampler_WhiteNoise0, noiseUV0).xyz);
+                // debug
+
+                // 调试每一层步进采样的值
+                /*float3 debugColor;
+                debugColor = marchColors[6];// / 7.0f;
+                color = debugColor * albedo * 0.9 + debugColor * 0.1;*/
+                
                 //color = float3(0.1, 0.5, 0.6);
 
                 return float4(color.xyz, 1);

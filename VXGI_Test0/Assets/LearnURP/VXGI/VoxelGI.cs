@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -19,13 +20,8 @@ public class VoxelGI : MonoBehaviour
     [Range(1, 8)]
     public int lodLevels = 5;
 
-    private float voxAreaSize
-    {
-        get
-        {
-            return voxTexSize * voxSize;
-        }
-    }
+    private float voxAreaSize => voxTexSize * voxSize;
+
     public int voxNumber {
         get
         {
@@ -65,6 +61,8 @@ public class VoxelGI : MonoBehaviour
     public ComputeBuffer voxelBuffer;
     // 体素零点
     private Vector3 zeroPos;
+    // 体素中心
+    private Vector3 centerPos => zeroPos + voxAreaSize / 2.0f * Vector3.one;
     
     void Start()
     {
@@ -147,8 +145,8 @@ public class VoxelGI : MonoBehaviour
         zeroPos.x = (int)(zeroPos.x / unit) * unit;
         zeroPos.y = (int)(zeroPos.y / unit) * unit;
         zeroPos.z = (int)(zeroPos.z / unit) * unit;
-        //zeroPos -= new Vector3(5.0f, 5.0f, 5.0f);
         Shader.SetGlobalVector("zeroPos", zeroPos);
+        Shader.SetGlobalInt("_LodLevel", lodLevels);
 
         /*var viewMatrix = View(camTrans);
         Debug.Log("Cam:" + Camera.main.worldToCameraMatrix);
@@ -167,5 +165,11 @@ public class VoxelGI : MonoBehaviour
             view.m23 = -view.m23;
         }
         return view;
+    }
+
+    private void OnDrawGizmos()
+    {
+        Gizmos.color = Color.green;
+        Gizmos.DrawWireCube(centerPos, voxAreaSize * Vector3.one);
     }
 }

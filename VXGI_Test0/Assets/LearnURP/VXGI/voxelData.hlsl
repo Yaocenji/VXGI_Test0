@@ -71,7 +71,6 @@ struct linearSampleInfo
 // 根据世界空间坐标和给定LOD，返回三维空间采样
 linearSampleInfo sampleVoxLinear(float3 cameraPos, float3 targetPos, int voxTexSize, float voxSize, int lodlevel)
 {
-    //float3 zeroPos = cameraPos - (voxTexSize * voxSize / 2.0f).xxx;
     uint3 id = (targetPos - zeroPos) / voxSize;
     
     int curTexSize = voxTexSize / int(pow(2, lodlevel));
@@ -98,21 +97,38 @@ linearSampleInfo sampleVoxLinear(float3 cameraPos, float3 targetPos, int voxTexS
 
     if (targetPos.x > voxCenterPos.x)
     {
-        sampleZeroPos.x += currVoxSize;
-        for (int i = 0; i < 8; ++i)
-            sampleID[i].x ++;
+        if (sampleID[0].x + 1 < curTexSize)
+        {
+            sampleZeroPos.x += currVoxSize;
+            for (int i = 0; i < 8; ++i)
+                sampleID[i].x ++;
+        }else
+        {
+            targetPos.x = voxCenterPos.x;
+        }
     }
     if (targetPos.y > voxCenterPos.x)
     {
-        sampleZeroPos.y += currVoxSize;
-        for (int i = 0; i < 8; ++i)
-            sampleID[i].y ++;
+        if (sampleID[0].y + 1 < curTexSize)
+        {
+            sampleZeroPos.y += currVoxSize;
+            for (int i = 0; i < 8; ++i)
+                sampleID[i].y ++;
+        }else
+        {
+            targetPos.y = voxCenterPos.y;
+        }
     }
     if (targetPos.z > voxCenterPos.x)
-    {
-        sampleZeroPos.z += currVoxSize;
-        for (int i = 0; i < 8; ++i)
-            sampleID[i].z ++;
+    {   if (sampleID[0].z + 1 < curTexSize)
+        {
+            sampleZeroPos.z += currVoxSize;
+            for (int i = 0; i < 8; ++i)
+                sampleID[i].z ++;
+        }else
+        {
+            targetPos.z = voxCenterPos.z;
+        }
     }
     // 相对采样位置（01位置）
     float3 relativeSamplePos = (targetPos - sampleZeroPos) / currVoxSize;

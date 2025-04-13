@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.Universal;
@@ -39,7 +40,8 @@ public class VoxelMipmapRenderFeature : ScriptableRendererFeature
                 cmd.SetComputeIntParam(manageVoxelDataCS, "voxTexSize", VoxelGI.instance.voxTexSize);
                 cmd.SetComputeIntParam(manageVoxelDataCS, "currVoxTexSize", currVoxTexSize);
                 cmd.SetComputeIntParam(manageVoxelDataCS, "currLodLevel", i);
-                cmd.DispatchCompute(manageVoxelDataCS, mipmapKernel, currVoxTexSize / 8, currVoxTexSize / 8, currVoxTexSize / 8);
+                int groupSize = Mathf.Max(currVoxTexSize / 8, 1);
+                cmd.DispatchCompute(manageVoxelDataCS, mipmapKernel, groupSize, groupSize, groupSize);
                 
                 lastOffset = currOffset;
                 currOffset += currVoxTexSize * currVoxTexSize * currVoxTexSize;

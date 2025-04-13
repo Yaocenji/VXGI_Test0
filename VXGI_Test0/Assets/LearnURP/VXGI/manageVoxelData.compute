@@ -31,6 +31,10 @@ int currVoxTexSize;
 [numthreads(8,8,8)]
 void CalculateLOD(uint3 id : SV_DispatchThreadID)
 {
+    if (id.x >= currVoxTexSize || id.y >= currVoxTexSize || id.z >= currVoxTexSize)
+    {
+        return;
+    }
     // 上一级的大小
     int lastVoxTexSize = currVoxTexSize * 2;
     

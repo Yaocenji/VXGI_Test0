@@ -42,12 +42,11 @@ public class VoxelUpdateRenderFeature : ScriptableRendererFeature
             CommandBuffer cmd = CommandBufferPool.Get("updateVoxelData");
             cmd.DispatchCompute(manageVoxelDataCS, initKernel, VoxelGI.instance.voxTexSize / 8, VoxelGI.instance.voxTexSize / 8, VoxelGI.instance.voxTexSize / 8);
             context.ExecuteCommandBuffer(cmd);
-            cmd.Clear();
-            cmd.Release();
-            context.Submit();
             
             
             context.SetupCameraProperties(renderingData.cameraData.camera);
+            cmd.SetRenderTarget(rt_id);
+            context.ExecuteCommandBuffer(cmd);
             // 临时DrawSetting
             DrawingSettings drawSetting = new DrawingSettings(new ShaderTagId("Voxelization"),
                 new SortingSettings(Camera.main));
@@ -57,6 +56,12 @@ public class VoxelUpdateRenderFeature : ScriptableRendererFeature
             CullingResults cullResults = context.Cull(ref cullingParameters);
             
             context.DrawRenderers(cullResults, ref drawSetting, ref fs);
+            
+            
+            
+            cmd.Clear();
+            cmd.Release();
+            context.Submit();
         }
 
         // Cleanup any allocated resources that were created during the execution of this render pass.

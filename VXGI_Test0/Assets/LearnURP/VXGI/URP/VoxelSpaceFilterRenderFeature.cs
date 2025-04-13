@@ -7,10 +7,13 @@ public class VoxelSpaceFilterRenderFeature : ScriptableRendererFeature
 {
     [Header("空间滤波shader")]
     public Shader spaceFilterShader;
+
+    [Header("间接光RT")] public RenderTexture ilRT;
     class SpaceFilterRenderPass : ScriptableRenderPass
     {
         public VoxelGI _vxgiManager;
         public Material spaceFilterMat;
+        public RenderTexture ilRT;
         
         // 临时RT
         static string rt_name = "_VoxelGI_AfterSpaceFilter";
@@ -26,8 +29,13 @@ public class VoxelSpaceFilterRenderFeature : ScriptableRendererFeature
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
             CommandBuffer cmd = CommandBufferPool.Get("SpaceFilter");
-            cmd.Blit(renderingData.cameraData.renderer.cameraColorTarget, rt_id, spaceFilterMat);
-            cmd.Blit(rt_id, renderingData.cameraData.renderer.cameraColorTarget);
+            
+            /*cmd.Blit(renderingData.cameraData.renderer.cameraColorTarget, rt_id, spaceFilterMat);
+            cmd.Blit(rt_id, renderingData.cameraData.renderer.cameraColorTarget);*/
+            
+            cmd.Blit(ilRT, rt_id, spaceFilterMat);
+            cmd.Blit(rt_id, ilRT);
+            
             context.ExecuteCommandBuffer(cmd);
             cmd.Clear();
             cmd.Release();
@@ -47,6 +55,7 @@ public class VoxelSpaceFilterRenderFeature : ScriptableRendererFeature
         m_ScriptablePass = new SpaceFilterRenderPass();
         m_ScriptablePass.renderPassEvent = RenderPassEvent.AfterRenderingOpaques;
         m_ScriptablePass.spaceFilterMat = new Material(spaceFilterShader);
+        m_ScriptablePass.ilRT = ilRT;
     }
     public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
     {

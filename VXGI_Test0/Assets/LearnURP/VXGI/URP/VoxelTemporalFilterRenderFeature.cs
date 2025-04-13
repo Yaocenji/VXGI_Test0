@@ -9,11 +9,17 @@ public class VoxelTemporalFilterRenderFeature : ScriptableRendererFeature
     
     [Header("时间滤波shader")]
     public Shader temporalFilterShader;
+    [Header("组合shader")]
+    public Shader combineLightShader;
+    
+    [Header("间接光RT")] public RenderTexture ilRT;
 
     class VoxelTemporalFilterRenderPass : ScriptableRenderPass
     {
         public RenderTexture lastRT;
         public Material temporalFilterMaterial;
+        public Material combineLightMaterial;
+        public RenderTexture ilRT;
         private static bool isFirstFrame = true;
         
         static string rt_name = "_VoxelGI_BeforeTemporalFilter";
@@ -26,22 +32,22 @@ public class VoxelTemporalFilterRenderFeature : ScriptableRendererFeature
             ConfigureTarget(rt_id);
             ConfigureClear(ClearFlag.Color, Color.black);
             temporalFilterMaterial.SetTexture("_LastFrameTex", lastRT);
+            combineLightMaterial.SetTexture("_IndirectLightTex", ilRT);
         }
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
             CommandBuffer cmd = CommandBufferPool.Get("TemporalFilter");
-            /*if (isFirstFrame == false)
-            {
-                
-            }
-            else
-            {
-                isFirstFrame = false;
-            }*/
-            cmd.Blit(renderingData.cameraData.renderer.cameraColorTarget, rt_id);
+            
+            /*cmd.Blit(renderingData.cameraData.renderer.cameraColorTarget, rt_id);
             cmd.Blit(rt_id, renderingData.cameraData.renderer.cameraColorTarget, temporalFilterMaterial);
-            cmd.Blit(renderingData.cameraData.renderer.cameraColorTarget, lastRT);
-            //cmd.Blit(lastRT, renderingData.cameraData.renderer.cameraColorTarget);
+            cmd.Blit(renderingData.cameraData.renderer.cameraColorTarget, lastRT);*/
+            
+            cmd.Blit(ilRT, rt_id);
+            cmd.Blit(rt_id, ilRT, temporalFilterMaterial);
+            cmd.Blit(ilRT, lastRT);
+            
+            cmd.Blit(renderingData.cameraData.renderer.cameraColorTarget, rt_id);
+            cmd.Blit(rt_id, renderingData.cameraData.renderer.cameraColorTarget, combineLightMaterial);
             
             context.ExecuteCommandBuffer(cmd);
             cmd.Clear();
@@ -65,6 +71,8 @@ public class VoxelTemporalFilterRenderFeature : ScriptableRendererFeature
         thePass.renderPassEvent = RenderPassEvent.AfterRenderingOpaques;
         thePass.lastRT = lastRT;
         thePass.temporalFilterMaterial = new Material(temporalFilterShader);
+        thePass.combineLightMaterial = new Material(combineLightShader);
+        thePass.ilRT = ilRT;
     }
 
     public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)

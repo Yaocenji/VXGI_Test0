@@ -71,7 +71,7 @@ public class VoxelGI : MonoBehaviour
         // 初始化体素网格信息
         int initKernel = manageVoxelDataCS.FindKernel("Clear");
         Debug.Log(voxNumber);
-        voxelBuffer = new ComputeBuffer(voxNumber, 24);
+        voxelBuffer = new ComputeBuffer(voxNumber, 36);
         Graphics.SetRandomWriteTarget(1, voxelBuffer, false);
         manageVoxelDataCS.SetBuffer(initKernel, "VoxelTexture", voxelBuffer);
         manageVoxelDataCS.SetInt("voxTexSize", voxTexSize);

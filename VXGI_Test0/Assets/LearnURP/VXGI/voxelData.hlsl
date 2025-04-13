@@ -3,6 +3,7 @@
 struct VoxelData{
     uint3 flags;    // flags.x是否为0表示该体素是否为空；// TODO flags.y表示有多少个片元已经访问过该体素
     float3 col;     // 颜色
+    float3 norm;
 };
 
 cbuffer UnityPerMaterial

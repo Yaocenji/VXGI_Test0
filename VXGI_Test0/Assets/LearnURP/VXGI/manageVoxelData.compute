@@ -45,6 +45,8 @@ void CalculateLOD(uint3 id : SV_DispatchThreadID)
     // 颜色之和
     float3 colSum = 0;
 
+    float3 normSum = 0;
+
     // 开始算8个位置
     int baseIdx[8];
     
@@ -78,6 +80,7 @@ void CalculateLOD(uint3 id : SV_DispatchThreadID)
         if (VoxelTexture[baseIdx[i]].flags.x != 0){
             voxExist += VoxelTexture[baseIdx[i]].flags.x;
             colSum += VoxelTexture[baseIdx[i]].col * (float)VoxelTexture[baseIdx[i]].flags.x;
+            normSum += VoxelTexture[baseIdx[i]].norm * (float)VoxelTexture[baseIdx[i]].flags.x;
         }
     }
 
@@ -85,10 +88,12 @@ void CalculateLOD(uint3 id : SV_DispatchThreadID)
     if (voxExist != 0){
         VoxelTexture[currIdx].flags.x = voxExist;
         VoxelTexture[currIdx].col = colSum / voxExist;
+        VoxelTexture[currIdx].norm = normSum == 0 ? 0 : normalize(normSum);
     }else
     {
         VoxelTexture[currIdx].flags.x = 0;
         VoxelTexture[currIdx].col = 0;
+        VoxelTexture[currIdx].norm = 0;
     }
 
     // debug

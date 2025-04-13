@@ -131,7 +131,7 @@ Shader "LearnURP/ConeTracing"
                 color += _EmitionCol * _EmitionStrength;
 
                 // debug 
-                //color = float3(SAMPLE_TEXTURE2D(_WhiteNoise0, sampler_WhiteNoise0, noiseUV0).xyz);
+                //color = VoxelTexture[visId].norm * 0.5 + 0.5;
                 //color = dir[0] * 0.5 + 0.5;
 
                 return float4(color.xyz, 1);
@@ -277,8 +277,13 @@ Shader "LearnURP/ConeTracing"
                 uint3 id = getId(manualCameraPos, IN.positionWS, voxTexSize, voxSize);
                 VIS_VOX_IDX(id);
 
-                VoxelTexture[visitVoxIndex(id, voxTexSize)].col = color;
-                VoxelTexture[visitVoxIndex(id, voxTexSize)].flags.x = 1;
+                int curr_flag_x = VoxelTexture[visitVoxIndex(id, voxTexSize)].flags.x;
+                
+                VoxelTexture[visitVoxIndex(id, voxTexSize)].col =  (color + curr_flag_x * VoxelTexture[visitVoxIndex(id, voxTexSize)].col) / float(curr_flag_x + 1);
+                
+                VoxelTexture[visitVoxIndex(id, voxTexSize)].norm = normalize(normalize(IN.normalWS) + curr_flag_x * VoxelTexture[visitVoxIndex(id, voxTexSize)].norm);
+                
+                VoxelTexture[visitVoxIndex(id, voxTexSize)].flags.x += 1;
                 
                 // debug
                 //VoxelTexture[visitVoxIndex(id, voxTexSize)].col = IN.positionWS / (voxTexSize * voxSize);
@@ -444,7 +449,8 @@ Shader "LearnURP/ConeTracing"
                 {
                     marchColors[i] = 0;
                 }
-                
+
+                float sumWeight = 0;// 权重之和
                 for (int i = 0; i < 7; ++i){
                     float3 cur_color = 0;
                     dirColors[i] = 0;
@@ -519,8 +525,13 @@ Shader "LearnURP/ConeTracing"
                         int tmpSize = voxTexSize * voxTexSize * voxTexSize;
                         int visId = int(tmpSize * (8 - pow(0.125, lodLevel - 1))) / 7 + curID.x * curTexSize * curTexSize + curID.y * curTexSize + curID.z;
                         tmp_col = VoxelTexture[visId].col;
+
+                        // 采样该体素的法线
+                        // 用voxNorm和marchingDir，计算一个权重
+                        float angleWeight = sqrt( saturate(dot(dir[i], -normalize(VoxelTexture[visId].norm)) + 0.15f) );    // sqrt和0.15f是模拟散射光波瓣的
                         
-                        float currWeight = 1.0 / (_LodLevel - 1);
+                        float currWeight = 1.0 / (_LodLevel - 1) * angleWeight;
+                        sumWeight += currWeight;
                         //currWeight = weight * (tmp_voxvol / currVoxVol);
                         
                         //cur_color += VoxelTexture[visIdxLODById(voxTexSize, lodLevel, curr_id)].col / 6.0f;
@@ -538,7 +549,10 @@ Shader "LearnURP/ConeTracing"
                     i_color += cur_color;
                     dirColors[i] = cur_color;
                 }
-                i_color /= 7.0f;
+                i_color /= sumWeight;
+
+                // 魔法数，调一下颜色
+                i_color *= .5;
 
                 // 部分吸收
                 color = i_color * albedo * 0.9 + i_color * 0.1;
@@ -549,8 +563,16 @@ Shader "LearnURP/ConeTracing"
                 /*float3 debugColor;
                 debugColor = marchColors[6];// / 7.0f;
                 color = debugColor * albedo * 0.9 + debugColor * 0.1;*/
+
+                /*linearSampleInfo sampleInfo = sampleVoxLinear(GetCameraPositionWS(), IN.positionWS, voxTexSize, voxSize, 0);
+                color = VoxelTexture[sampleInfo.visId[0]].col;*/
+                
+                //color = normalize(VoxelTexture[visIdxLODById(voxTexSize, 2, id)].norm * 0.5 + 0.5);
+                //color = VoxelTexture[visIdxLODById(voxTexSize, 0, id)].col;
                 
                 //color = float3(0.1, 0.5, 0.6);
+
+                //color = IN.normalWS * 0.5 + 0.5;
 
                 return float4(color.xyz, 1);
             }

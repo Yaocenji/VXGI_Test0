@@ -58,7 +58,8 @@ Shader "LearnURP/VXGITemporalFilter"
             {
                 half4 col = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, IN.uv);
                 half4 lastCol = SAMPLE_TEXTURE2D(_LastFrameTex, sampler_LastFrameTex, IN.uv);
-                col = 0.1 * col + 0.9 * lastCol;
+                if (length(col - lastCol) > 0.005) 
+                    col = 0.1 * col + 0.9 * lastCol;
                 col.w = 1;
                 return col;
             }

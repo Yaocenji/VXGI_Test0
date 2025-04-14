@@ -4,6 +4,11 @@ Shader "LearnURP/ConeTracing"
     {
         _BaseMap ("Base Texture",2D) = "white"{}
         _BaseColor("Base Color",Color)=(1,1,1,1)
+        _Roughness ("Roughness Texture",2D) = "black"{}
+        _Normal ("Normal Texture",2D) = "Bump"{}
+        _NormalScale ("Normal Scale", Float) = 1.0
+        _Metallic ("Metallic Texture",2D) = "white"{}
+        _AmbientOcclusion ("Ambient Occlusion Texture",2D) = "white"{}
         _SpecularColor("Specular Color",Color)=(1,1,1,1)
         _Smoothness("Smoothness", Float) = 0.5
         _EmitionCol("Emit Color",Color)=(0,0, 0, 0)
@@ -27,6 +32,12 @@ Shader "LearnURP/ConeTracing"
         CBUFFER_START(UnityPerMaterial)
         float4 _BaseMap_ST;
         half4 _BaseColor;
+        float4 _Roughness_ST;
+        float4 _Normal_ST;
+        float _NormalScale;
+        float4 _Metallic_ST;
+        float4 _AmbientOcclusion_ST;
+        
         half4 _SpecularColor;
         half _Smoothness;
         half4 _EmitionCol;
@@ -44,6 +55,145 @@ Shader "LearnURP/ConeTracing"
 
         int _LodLevel;
         CBUFFER_END
+
+
+        // 以下是PBR轮子
+        float Pow5(float x){
+            return x * x * x * x * x;
+        }
+        float Pow2(float x){
+            return x * x;
+        }
+        // 菲涅尔
+        float3 F_SchlickFresnel(float cosTheta, float3 F0){
+            return F0 + (1 - F0) * Pow5(1 - cosTheta);
+        }
+        // 法线分布
+        float D_GGX(float3 n, float3 h, float rough){
+            float a2 = Pow2(rough);
+            float NdotH = dot(n, h);
+            float denom = PI * Pow2(Pow2(NdotH) * (a2 - 1) + 1);
+            return a2 / denom;
+        }
+        // 几何遮蔽函数
+        float G_SchlickGGX(float3 n, float3 v, float3 rough, bool if_IBL = false){
+            float k;
+            if (if_IBL){
+                k = Pow2(rough) / 2;
+            }
+            else {
+                k = Pow2(rough + 1) / 8;
+            }
+            float NdotV = max(dot(n, v), 0) + 0.001;
+            return NdotV / (NdotV * (1 - k) + k);
+        }
+        // 几何遮蔽函数史密斯法：观察方向的几何遮蔽函数和光照方向的几何遮蔽函数相乘获得G项
+        float G_Smith(float3 n, float3 v, float3 l, float3 rough, bool if_IBL = false){
+            return G_SchlickGGX(n, v, rough, if_IBL) * G_SchlickGGX(n, l, rough, if_IBL);
+        }
+
+
+        float3 BRDF(float3 L, float3 V, float3 N, half3 baseColor, half3 metalness, half3 roughness, bool if_IBL = false){
+            // 计算specular
+            float3 H = normalize(L + V);
+            float D = D_GGX(N, H, roughness);
+            float G = G_Smith(N, V, L, roughness, if_IBL);
+
+            float3 F0 = float3(0.04f, 0.04f, 0.04f);
+            F0 = lerp(F0, baseColor, metalness.r);
+            float3 F = F_SchlickFresnel(max(dot(H, V), 0), F0);
+
+            float3 nom = D * G * F;
+            float donom = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.001;
+            float3 Cook_Torrance = nom / donom;
+
+            float3 Ks = F;
+            float3 BRDF_Specular = Cook_Torrance;
+
+            // 计算diffuse
+            float3 Kd = float3(1,1,1) - Ks;
+            Kd *= 1 - metalness;
+            float3 BRDF_Diffuse = Kd * baseColor / PI;
+            
+
+            return BRDF_Specular + BRDF_Diffuse;
+        }
+
+//D项
+float DistributionGGX(float3 NdotH, float roughness)
+{
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float NdotH2 = NdotH * NdotH;
+
+    float nom = a2;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    denom = PI * denom * denom;
+
+    return nom / denom;
+}
+//G项
+float GeometrySchlickGGX(float cosTheta, float k)
+{
+    float nom = cosTheta;
+    float denom = cosTheta * (1.0 - k) + k;
+    return nom / (denom + 1e-5f);
+}
+//G项考虑视线方向和光照方向
+float GeometrySmith(float NdotV,float NdotL ,float roughness)
+{
+    float r = (roughness + 1.0);
+    float k = (r * r) / 8.0;
+    float ggx2 = GeometrySchlickGGX(NdotV, k);
+    float ggx1 = GeometrySchlickGGX(NdotL, k);
+    return ggx1 * ggx2;
+}
+//F项
+float3 FresnelTerm(float3 F0, float cosA)
+{
+    half t = pow(1 - cosA,5.0); 
+    return F0 + (1 - F0) * t;
+}
+
+
+//直接光照计算
+float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalness,float roughness,float3 f0,float3 lightColor)
+{
+    float dTerm = DistributionGGX(nh, roughness);
+    float gTerm = GeometrySmith(nl, nv, roughness);
+    float3 fTerm = FresnelTerm(f0, hv);
+    //max 0.001 保证分母不为0
+    float3 specular = dTerm * gTerm * fTerm / (4.0 * max(nv * nl, 0.001));
+    //我们按照能量守恒的关系，首先计算镜面反射部分，它的值等于入射光线被反射的能量所占的百分比。
+    float3 kS = fTerm;
+    //然后折射光部分就可以直接由镜面反射部分计算得出：
+    float3 kD = (1.0 - kS) ;
+    //金属是没有漫反射的,所以Kd需要乘上1-metalness
+    kD *= 1.0 - metalness;
+    //除π是为了能量守恒，但Unity也没有除以π，应该是觉得除以π后太暗，所以我们这里也先不除
+    float3 diffuse = kD * albedo;// *INV_PI;
+    float3 result = (diffuse + specular) * nl * lightColor;
+    return (result);
+}
+        
+        float Clamp(float x, float l, float r)
+        {
+            if (x > r)
+                return r;
+            if (x < l)
+                return l;
+            return x;
+        }
+
+        
+        TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
+        TEXTURE2D(_Roughness); SAMPLER(sampler_Roughness);
+        TEXTURE2D(_Normal); SAMPLER(sampler_Normal);
+        TEXTURE2D(_Metallic); SAMPLER(sampler_Metallic);
+        TEXTURE2D(_AmbientOcclusion); SAMPLER(sampler_AmbientOcclusion);
+        
+        TEXTURE2D(_WhiteNoise0); SAMPLER(sampler_WhiteNoise0);
+        RWStructuredBuffer<VoxelData> VoxelTexture : register(u1); // 表面是1维，实际是三维
         
         ENDHLSL
         
@@ -77,10 +227,6 @@ Shader "LearnURP/ConeTracing"
                 float4 tangentWS : TEXCOORD4;
                 float4 shadowCoord : TEXCOORD5;
             };
-
-            TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
-            TEXTURE2D(_WhiteNoise0); SAMPLER(sampler_WhiteNoise0);
-            RWStructuredBuffer<VoxelData> VoxelTexture : register(u1); // 表面是1维，实际是三维
 
             // 顶点着色器
             Varings vert (Attributes IN)
@@ -124,15 +270,54 @@ Shader "LearnURP/ConeTracing"
                 half3 specular = light.color * specularColor.rgb * pow(NdotH, _Smoothness);
 
                 float3 color = diffuse;// + specular;
-                float shadow = MainLightRealtimeShadow(IN.shadowCoord);
+
+                // PBR，启动！
+                // albedo
+                float3 baseColor = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv).xyz;
+                // 粗糙度
+                float3 roughness = 1 - SAMPLE_TEXTURE2D(_Roughness, sampler_Roughness, IN.uv).xyz;  // 为了适配sponza的贴图，采样了smoothness
+                // 法线
+                float4 packedNormal = SAMPLE_TEXTURE2D(_Normal, sampler_Normal, IN.uv);
+                float3 normalTS = UnpackNormal(packedNormal);
+                normalTS.xy *= _NormalScale;
+                normalTS.z = sqrt(1.0 - saturate(dot(normalTS.xy, normalTS.xy)));
+                // 金属度
+                float3 metallic = SAMPLE_TEXTURE2D(_Metallic, sampler_Metallic, IN.uv);
+                // AO
+                float ambientOcclusion = SAMPLE_TEXTURE2D(_AmbientOcclusion, sampler_AmbientOcclusion, IN.uv).x;
+
+                // 变换到切线空间计算
+                real3x3 T2W_MATRIX = CreateTangentToWorld(IN.normalWS, IN.tangentWS.xyz, IN.tangentWS.w);
+                real3x3 W2T_MATRIX = Inverse(real4x4(
+                                                        float4(T2W_MATRIX[0], 0),
+                                                        float4(T2W_MATRIX[1], 0),
+                                                        float4(T2W_MATRIX[2], 0),
+                                                        float4(0,   0,   0,   1)));
+                float3 lightDirTS = mul(light.direction, W2T_MATRIX);
+                float3 viewDirTS = mul(IN.viewDirWS, W2T_MATRIX);
+                float3 halfDirTS = normalize(lightDirTS + viewDirTS);
+
+                // 计算BRDF颜色
+                float3 brdf = BRDF(lightDirTS,viewDirTS, normalTS, baseColor, metallic, roughness);
+                // 渲染方程
+                float3 Lo = light.distanceAttenuation * light.color.rgb * max(dot(lightDirTS, normalTS), 0) * brdf;
+
+                Lo = DirectPBR(dot(normalTS, lightDirTS), dot(normalTS, viewDirTS), dot(normalTS, halfDirTS), dot(halfDirTS, viewDirTS),
+                    baseColor, metallic, roughness, float3(0.04f, 0.04f, 0.04f), light.color);
+                //color = Lo;
+
+                // 阴影
+                float shadow = MainLightRealtimeShadow(TransformWorldToShadowCoord(IN.positionWS));
                 color *= shadow;
 
                 // 自发光
                 color += _EmitionCol * _EmitionStrength;
 
+
                 // debug 
-                //color = VoxelTexture[visId].norm * 0.5 + 0.5;
+                //color = VoxelTexture[visId].col;
                 //color = dir[0] * 0.5 + 0.5;
+                //color = mul(IN.normalWS, W2T_MATRIX);
 
                 return float4(color.xyz, 1);
             }
@@ -160,6 +345,7 @@ Shader "LearnURP/ConeTracing"
                 float4 positionOS : POSITION;
                 float3 normalOS : NORMAL;
                 float2 uv : TEXCOORD;
+                float4 tangentOS : TANGENT;
             };
 
             struct VertexToGeometry
@@ -170,6 +356,7 @@ Shader "LearnURP/ConeTracing"
                 float3 normalWS : TEXCOORD2;
                 float3 positionWS : TEXCOORD3;
                 float4 shadowCoord : TEXCOORD4;
+                float4 tangentWS : TEXCOORD5;
             };
 
             struct Varings
@@ -180,24 +367,23 @@ Shader "LearnURP/ConeTracing"
                 float3 normalWS : TEXCOORD2;
                 float4 positionWS : TEXCOORD3;  // xyz表示世界空间位置，w表示世界空间深度（基于对应的正交投影面）
                 float4 shadowCoord : TEXCOORD4;
+                float4 tangentWS : TEXCOORD5;
             };
-
-            TEXTURE2D(_BaseMap);
-            SAMPLER(sampler_BaseMap);
-            RWStructuredBuffer<VoxelData> VoxelTexture : register(u1); // 表面是1维，实际是三维
 
             // 顶点着色器
             VertexToGeometry vert (Attributes IN)
             {
                 VertexToGeometry OUT;
                 VertexPositionInputs positionInputs = GetVertexPositionInputs(IN.positionOS.xyz);
-                VertexNormalInputs normalInputs = GetVertexNormalInputs(IN.normalOS.xyz);
+                VertexNormalInputs normalInputs = GetVertexNormalInputs(IN.normalOS.xyz, IN.tangentOS.xyzw);
                 OUT.positionCS = positionInputs.positionCS;
                 OUT.viewDirWS = GetCameraPositionWS() - positionInputs.positionWS;
                 OUT.normalWS = normalInputs.normalWS;
                 OUT.uv=TRANSFORM_TEX(IN.uv,_BaseMap);
                 OUT.positionWS = positionInputs.positionWS;
                 OUT.shadowCoord = GetShadowCoord(positionInputs);
+                OUT.tangentWS.xyz = normalInputs.tangentWS;
+                OUT.tangentWS.w = IN.tangentOS.w;
                 return OUT;
             }
             // 几何着色器
@@ -234,6 +420,7 @@ Shader "LearnURP/ConeTracing"
                     OUT.uv = IN[i].uv;
                     OUT.positionWS = float4(IN[i].positionWS, 0.0f);
                     OUT.shadowCoord = IN[i].shadowCoord;
+                    OUT.tangentWS = IN[i].tangentWS;
 
                     // 计算深度
                     if (projDir == 0)
@@ -253,6 +440,8 @@ Shader "LearnURP/ConeTracing"
             {
                 // 先进行正常的渲染
                 // sample the texture and color
+                // 先进行正常的渲染
+                // sample the texture and color
                 half4 baseMap = (SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv));
                 half4 specularColor = (_SpecularColor);
                 
@@ -260,14 +449,53 @@ Shader "LearnURP/ConeTracing"
                 float3 lightDirWS = light.direction;
                 float3 viewDirWS = GetCameraPositionWS() - IN.positionWS;
 
-                half3 diffuse = baseMap.xyz*_BaseColor*LightingLambert(light.color, light.direction, IN.normalWS);
+                half3 albedo = baseMap.xyz*_BaseColor;
+
+                half3 diffuse = albedo * LightingLambert(light.color, light.direction, IN.normalWS);
                 
                 float3 halfVec = SafeNormalize(normalize(lightDirWS) + normalize(viewDirWS));
                 half NdotH = saturate(dot(normalize(IN.normalWS), halfVec));
                 half3 specular = light.color * specularColor.rgb * pow(NdotH, _Smoothness);
+
+                float3 color = diffuse;// + specular;
+
+                // PBR，启动！
+                // albedo
+                float3 baseColor = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv).xyz;
+                // 粗糙度
+                float3 roughness = 1 - SAMPLE_TEXTURE2D(_Roughness, sampler_Roughness, IN.uv).xyz;  // 为了适配sponza的贴图，采样了smoothness
+                // 法线
+                float4 packedNormal = SAMPLE_TEXTURE2D(_Normal, sampler_Normal, IN.uv);
+                float3 normalTS = UnpackNormal(packedNormal);
+                normalTS.xy *= _NormalScale;
+                normalTS.z = sqrt(1.0 - saturate(dot(normalTS.xy, normalTS.xy)));
+                // 金属度
+                float3 metallic = SAMPLE_TEXTURE2D(_Metallic, sampler_Metallic, IN.uv);
+                // AO
+                float ambientOcclusion = SAMPLE_TEXTURE2D(_AmbientOcclusion, sampler_AmbientOcclusion, IN.uv).x;
+
+                // 变换到切线空间计算
+                real3x3 T2W_MATRIX = CreateTangentToWorld(IN.normalWS, IN.tangentWS.xyz, IN.tangentWS.w);
+                real3x3 W2T_MATRIX = Inverse(real4x4(
+                                                        float4(T2W_MATRIX[0], 0),
+                                                        float4(T2W_MATRIX[1], 0),
+                                                        float4(T2W_MATRIX[2], 0),
+                                                        float4(0,   0,   0,   1)));
+                float3 lightDirTS = mul(light.direction, W2T_MATRIX);
+                float3 viewDirTS = mul(IN.viewDirWS, W2T_MATRIX);
+                float3 halfDirTS = normalize(lightDirTS + viewDirTS);
+
+                // 计算BRDF颜色
+                float3 brdf = BRDF(lightDirTS,viewDirTS, normalTS, baseColor, metallic, roughness);
+                // 渲染方程
+                float3 Lo = light.distanceAttenuation * light.color.rgb * max(dot(lightDirTS, normalTS), 0) * brdf;
+
+                Lo = DirectPBR(dot(normalTS, lightDirTS), dot(normalTS, viewDirTS), dot(normalTS, halfDirTS), dot(halfDirTS, viewDirTS),
+                    baseColor, metallic, roughness, float3(0.04f, 0.04f, 0.04f), light.color);
+                //color = Lo;
+
                 
-                float3 color = diffuse + specular;
-                float shadow = MainLightRealtimeShadow(IN.shadowCoord);
+                float shadow = MainLightRealtimeShadow(TransformWorldToShadowCoord(IN.positionWS));
                 color *= shadow;
                 // 自发光
                 color += _EmitionCol * _EmitionStrength;
@@ -326,10 +554,6 @@ Shader "LearnURP/ConeTracing"
                 float4 shadowCoord : TEXCOORD5;
             };
 
-            TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
-            TEXTURE2D(_WhiteNoise0); SAMPLER(sampler_WhiteNoise0);
-            RWStructuredBuffer<VoxelData> VoxelTexture : register(u1); // 表面是1维，实际是三维
-
             // 顶点着色器
             Varings vert (Attributes IN)
             {
@@ -347,14 +571,6 @@ Shader "LearnURP/ConeTracing"
                 return OUT;
             }
 
-            float Clamp(float x, float l, float r)
-            {
-                if (x > r)
-                    return r;
-                if (x < l)
-                    return l;
-                return x;
-            }
             // 噪声，每帧调用结果都不同
             float2 InterleavedGradientNoise2D(float2 v) {
                 return float2(
@@ -394,27 +610,52 @@ Shader "LearnURP/ConeTracing"
                 half3 specular = light.color * specularColor.rgb * pow(NdotH, _Smoothness);
 
                 float3 color = diffuse;// + specular;
-                float shadow = MainLightRealtimeShadow(IN.shadowCoord);
+                float shadow = MainLightRealtimeShadow(TransformWorldToShadowCoord(IN.positionWS));
                 color *= shadow;
 
                 // 自发光
                 color += _EmitionCol * _EmitionStrength;
 
-                // 计算圆锥体radiance
-                // 7个60°圆锥体，两两相切组成
 
-                // 先获取切线空间
+                // PBR，启动！
+                // albedo
+                float3 baseColor = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv).xyz;
+                // 粗糙度
+                float3 roughness = 1 - SAMPLE_TEXTURE2D(_Roughness, sampler_Roughness, IN.uv).xyz;  // 为了适配sponza的贴图，采样了smoothness
+                // 法线
+                float4 packedNormal = SAMPLE_TEXTURE2D(_Normal, sampler_Normal, IN.uv);
+                float3 normalTS = UnpackNormal(packedNormal);
+                normalTS.xy *= _NormalScale;
+                normalTS.z = sqrt(1.0 - saturate(dot(normalTS.xy, normalTS.xy)));
+                // 金属度
+                float3 metallic = SAMPLE_TEXTURE2D(_Metallic, sampler_Metallic, IN.uv);
+                // AO
+                float ambientOcclusion = SAMPLE_TEXTURE2D(_AmbientOcclusion, sampler_AmbientOcclusion, IN.uv).x;
+
+                // 变换到切线空间计算
                 // 切线空间到世界空间的变换矩阵
                 real3x3 T2W_MATRIX = CreateTangentToWorld(IN.normalWS, IN.tangentWS.xyz, IN.tangentWS.w);
+                real3x3 W2T_MATRIX = Inverse(real4x4(
+                                                        float4(T2W_MATRIX[0], 0),
+                                                        float4(T2W_MATRIX[1], 0),
+                                                        float4(T2W_MATRIX[2], 0),
+                                                        float4(0,   0,   0,   1)));
+                
+                float3 viewDirTS = mul(IN.viewDirWS, W2T_MATRIX);
+                
+
+                // 计算圆锥体radiance
+                // 7个60°圆锥体，两两相切组成
+                // 先获取切线空间
                 //切线空间采样方向（七个圆锥体的中心向量）
-                float3 dir[7];
-                dir[0] = float3( 0,  0      , 1);
-                dir[1] = float3( 3,  1.73205, 2);
-                dir[2] = float3( 0,  1.73205, 1);
-                dir[3] = float3(-3,  1.73205, 2);
-                dir[4] = float3(-3, -1.73205, 2);
-                dir[5] = float3( 0, -1.73205, 1);
-                dir[6] = float3( 3, -1.73205, 2);
+                float3 dirTS[7];
+                dirTS[0] = normalize(float3( 0,  0      , 1));
+                dirTS[1] = normalize(float3( 3,  1.73205, 2));
+                dirTS[2] = normalize(float3( 0,  1.73205, 1));
+                dirTS[3] = normalize(float3(-3,  1.73205, 2));
+                dirTS[4] = normalize(float3(-3, -1.73205, 2));
+                dirTS[5] = normalize(float3( 0, -1.73205, 1));
+                dirTS[6] = normalize(float3( 3, -1.73205, 2));
 
                 // 添加随机偏移
                 float2 noiseUV0 = InterleavedGradientNoise3D(IN.positionWS * 4.6548792);
@@ -422,16 +663,17 @@ Shader "LearnURP/ConeTracing"
                 float2 randDir = 4.0f * float2(SAMPLE_TEXTURE2D(_WhiteNoise0, sampler_WhiteNoise0, noiseUV0).x, SAMPLE_TEXTURE2D(_WhiteNoise0, sampler_WhiteNoise0, noiseUV1).x) - 2.0f;
                 //randDir = 0;
                 for (int i = 0; i < 7; ++i)
-                    dir[i] = normalize(dir[i] + float3(randDir.xy, 0));
+                    dirTS[i] = normalize(dirTS[i] + float3(randDir.xy, 0));
                 
                 // 将其变换为：世界空间
-                dir[0] = mul(dir[0], T2W_MATRIX);
-                dir[1] = mul(dir[1], T2W_MATRIX);
-                dir[2] = mul(dir[2], T2W_MATRIX);
-                dir[3] = mul(dir[3], T2W_MATRIX);
-                dir[4] = mul(dir[4], T2W_MATRIX);
-                dir[5] = mul(dir[5], T2W_MATRIX);
-                dir[6] = mul(dir[6], T2W_MATRIX);
+                float3 dir[7];
+                dir[0] = mul(dirTS[0], T2W_MATRIX);
+                dir[1] = mul(dirTS[1], T2W_MATRIX);
+                dir[2] = mul(dirTS[2], T2W_MATRIX);
+                dir[3] = mul(dirTS[3], T2W_MATRIX);
+                dir[4] = mul(dirTS[4], T2W_MATRIX);
+                dir[5] = mul(dirTS[5], T2W_MATRIX);
+                dir[6] = mul(dirTS[6], T2W_MATRIX);
                 
                 //color += VoxelTexture[visIdxLODById(voxTexSize, 0, id)].col;
                 float3 i_color = 0;
@@ -529,11 +771,22 @@ Shader "LearnURP/ConeTracing"
                         // 采样该体素的法线
                         // 用voxNorm和marchingDir，计算一个权重
                         float angleWeight = sqrt( saturate(dot(dir[i], -normalize(VoxelTexture[visId].norm)) + 0.15f) );    // sqrt和0.15f是模拟散射光波瓣的
+
+
+                        // PBR，启动！
+                        // 计算BRDF颜色
+                        float3 brdf = BRDF(dirTS[i],viewDirTS, normalTS, baseColor, metallic, roughness);
+                        // 渲染方程
+                        float3 Lo = tmp_col.rgb * max(dot(dirTS[i], normalTS), 0) * brdf;
+
+                        float3 halfDirTS = normalize(dirTS[i] + viewDirTS);
+                        Lo = DirectPBR(dot(normalTS, dirTS[i]), dot(normalTS, viewDirTS), dot(normalTS, halfDirTS), dot(halfDirTS, viewDirTS),
+                    baseColor, metallic, roughness, float3(0.04f, 0.04f, 0.04f), tmp_col);
+                
                         
-                        float currWeight = 1.0 / (_LodLevel - 1) * angleWeight;
+                        float currWeight = angleWeight;
                         sumWeight += currWeight;
                         //currWeight = weight * (tmp_voxvol / currVoxVol);
-                        
                         //cur_color += VoxelTexture[visIdxLODById(voxTexSize, lodLevel, curr_id)].col / 6.0f;
                         
                         cur_color += tmp_col * currWeight;
@@ -552,10 +805,12 @@ Shader "LearnURP/ConeTracing"
                 i_color /= sumWeight;
 
                 // 魔法数，调一下颜色
-                i_color *= .5;
+                //i_color *= .01;
 
                 // 部分吸收
-                color = i_color * albedo * 0.9 + i_color * 0.1;
+                color = i_color * albedo * 1.0 + i_color * 0.0;
+                // 不吸收
+                //color = i_color;
 
                 // debug
 

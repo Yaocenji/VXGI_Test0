@@ -49,6 +49,9 @@ public class VoxelTemporalFilterRenderFeature : ScriptableRendererFeature
             cmd.Blit(renderingData.cameraData.renderer.cameraColorTarget, rt_id);
             cmd.Blit(rt_id, renderingData.cameraData.renderer.cameraColorTarget, combineLightMaterial);
             
+            // 只看间接光
+            // cmd.Blit(ilRT, renderingData.cameraData.renderer.cameraColorTarget);
+            
             context.ExecuteCommandBuffer(cmd);
             cmd.Clear();
             cmd.Release();

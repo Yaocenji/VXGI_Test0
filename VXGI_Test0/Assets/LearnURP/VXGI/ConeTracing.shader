@@ -194,6 +194,32 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
         
         TEXTURE2D(_WhiteNoise0); SAMPLER(sampler_WhiteNoise0);
         RWStructuredBuffer<VoxelData> VoxelTexture : register(u1); // 表面是1维，实际是三维
+
+
+        float3 GetAlbedo(float2 uv)
+        {
+            return SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uv).xyz * _BaseColor;
+        }
+        float3 GetRoughness(float2 uv)
+        {
+            return SAMPLE_TEXTURE2D(_Roughness, sampler_Roughness, uv).xyz;
+        }
+        float3 GetNormalTS(float2 uv)
+        {
+            float4 packedNormal = SAMPLE_TEXTURE2D(_Normal, sampler_Normal, uv);
+            float3 normalTS = UnpackNormal(packedNormal);
+            normalTS.xy *= _NormalScale;
+            normalTS.z = sqrt(1.0 - saturate(dot(normalTS.xy, normalTS.xy)));
+            return normalTS;
+        }
+        float3 GetMetallic(float2 uv)
+        {
+            return SAMPLE_TEXTURE2D(_Metallic, sampler_Metallic, uv);
+        }
+        float GetAO(float2 uv)
+        {
+            return SAMPLE_TEXTURE2D(_AmbientOcclusion, sampler_AmbientOcclusion, uv).x;
+        }
         
         ENDHLSL
         
@@ -273,18 +299,15 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
 
                 // PBR，启动！
                 // albedo
-                float3 baseColor = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv).xyz;
+                float3 baseColor = GetAlbedo(IN.uv);
                 // 粗糙度
-                float3 roughness = 1 - SAMPLE_TEXTURE2D(_Roughness, sampler_Roughness, IN.uv).xyz;  // 为了适配sponza的贴图，采样了smoothness
+                float3 roughness = GetRoughness(IN.uv);
                 // 法线
-                float4 packedNormal = SAMPLE_TEXTURE2D(_Normal, sampler_Normal, IN.uv);
-                float3 normalTS = UnpackNormal(packedNormal);
-                normalTS.xy *= _NormalScale;
-                normalTS.z = sqrt(1.0 - saturate(dot(normalTS.xy, normalTS.xy)));
+                float3 normalTS = GetNormalTS(IN.uv);
                 // 金属度
-                float3 metallic = SAMPLE_TEXTURE2D(_Metallic, sampler_Metallic, IN.uv);
+                float3 metallic = GetMetallic(IN.uv);
                 // AO
-                float ambientOcclusion = SAMPLE_TEXTURE2D(_AmbientOcclusion, sampler_AmbientOcclusion, IN.uv).x;
+                float ambientOcclusion = GetAO(IN.uv);
 
                 // 变换到切线空间计算
                 real3x3 T2W_MATRIX = CreateTangentToWorld(IN.normalWS, IN.tangentWS.xyz, IN.tangentWS.w);
@@ -293,8 +316,8 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                                                         float4(T2W_MATRIX[1], 0),
                                                         float4(T2W_MATRIX[2], 0),
                                                         float4(0,   0,   0,   1)));
-                float3 lightDirTS = mul(light.direction, W2T_MATRIX);
-                float3 viewDirTS = mul(IN.viewDirWS, W2T_MATRIX);
+                float3 lightDirTS = normalize(mul(light.direction, W2T_MATRIX));
+                float3 viewDirTS = normalize(mul(IN.viewDirWS, W2T_MATRIX));
                 float3 halfDirTS = normalize(lightDirTS + viewDirTS);
 
                 // 计算BRDF颜色
@@ -302,9 +325,9 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 // 渲染方程
                 float3 Lo = light.distanceAttenuation * light.color.rgb * max(dot(lightDirTS, normalTS), 0) * brdf;
 
-                Lo = DirectPBR(dot(normalTS, lightDirTS), dot(normalTS, viewDirTS), dot(normalTS, halfDirTS), dot(halfDirTS, viewDirTS),
-                    baseColor, metallic, roughness, float3(0.04f, 0.04f, 0.04f), light.color);
-                //color = Lo;
+                /*Lo = DirectPBR(dot(normalTS, lightDirTS), dot(normalTS, viewDirTS), dot(normalTS, halfDirTS), dot(halfDirTS, viewDirTS),
+                    baseColor, metallic, roughness, float3(0.04f, 0.04f, 0.04f), light.color);*/
+                color = Lo;
 
                 // 阴影
                 float shadow = MainLightRealtimeShadow(TransformWorldToShadowCoord(IN.positionWS));
@@ -459,20 +482,16 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
 
                 float3 color = diffuse;// + specular;
 
+                
                 // PBR，启动！
                 // albedo
-                float3 baseColor = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv).xyz;
+                float3 baseColor = GetAlbedo(IN.uv);
                 // 粗糙度
-                float3 roughness = 1 - SAMPLE_TEXTURE2D(_Roughness, sampler_Roughness, IN.uv).xyz;  // 为了适配sponza的贴图，采样了smoothness
+                float3 roughness = GetRoughness(IN.uv);
                 // 法线
-                float4 packedNormal = SAMPLE_TEXTURE2D(_Normal, sampler_Normal, IN.uv);
-                float3 normalTS = UnpackNormal(packedNormal);
-                normalTS.xy *= _NormalScale;
-                normalTS.z = sqrt(1.0 - saturate(dot(normalTS.xy, normalTS.xy)));
+                float3 normalTS = GetNormalTS(IN.uv);
                 // 金属度
-                float3 metallic = SAMPLE_TEXTURE2D(_Metallic, sampler_Metallic, IN.uv);
-                // AO
-                float ambientOcclusion = SAMPLE_TEXTURE2D(_AmbientOcclusion, sampler_AmbientOcclusion, IN.uv).x;
+                float3 metallic = GetMetallic(IN.uv);
 
                 // 变换到切线空间计算
                 real3x3 T2W_MATRIX = CreateTangentToWorld(IN.normalWS, IN.tangentWS.xyz, IN.tangentWS.w);
@@ -481,8 +500,8 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                                                         float4(T2W_MATRIX[1], 0),
                                                         float4(T2W_MATRIX[2], 0),
                                                         float4(0,   0,   0,   1)));
-                float3 lightDirTS = mul(light.direction, W2T_MATRIX);
-                float3 viewDirTS = mul(IN.viewDirWS, W2T_MATRIX);
+                float3 lightDirTS = normalize(mul(light.direction, W2T_MATRIX));
+                float3 viewDirTS = normalize(mul(IN.viewDirWS, W2T_MATRIX));
                 float3 halfDirTS = normalize(lightDirTS + viewDirTS);
 
                 // 计算BRDF颜色
@@ -490,9 +509,9 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 // 渲染方程
                 float3 Lo = light.distanceAttenuation * light.color.rgb * max(dot(lightDirTS, normalTS), 0) * brdf;
 
-                Lo = DirectPBR(dot(normalTS, lightDirTS), dot(normalTS, viewDirTS), dot(normalTS, halfDirTS), dot(halfDirTS, viewDirTS),
-                    baseColor, metallic, roughness, float3(0.04f, 0.04f, 0.04f), light.color);
-                //color = Lo;
+                /*Lo = DirectPBR(dot(normalTS, lightDirTS), dot(normalTS, viewDirTS), dot(normalTS, halfDirTS), dot(halfDirTS, viewDirTS),
+                    baseColor, metallic, roughness, float3(0.04f, 0.04f, 0.04f), light.color);*/
+                color = Lo;
 
                 
                 float shadow = MainLightRealtimeShadow(TransformWorldToShadowCoord(IN.positionWS));
@@ -617,20 +636,16 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 color += _EmitionCol * _EmitionStrength;
 
 
+                
                 // PBR，启动！
                 // albedo
-                float3 baseColor = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv).xyz;
+                float3 baseColor = GetAlbedo(IN.uv);
                 // 粗糙度
-                float3 roughness = 1 - SAMPLE_TEXTURE2D(_Roughness, sampler_Roughness, IN.uv).xyz;  // 为了适配sponza的贴图，采样了smoothness
+                float3 roughness = GetRoughness(IN.uv);
                 // 法线
-                float4 packedNormal = SAMPLE_TEXTURE2D(_Normal, sampler_Normal, IN.uv);
-                float3 normalTS = UnpackNormal(packedNormal);
-                normalTS.xy *= _NormalScale;
-                normalTS.z = sqrt(1.0 - saturate(dot(normalTS.xy, normalTS.xy)));
+                float3 normalTS = GetNormalTS(IN.uv);
                 // 金属度
-                float3 metallic = SAMPLE_TEXTURE2D(_Metallic, sampler_Metallic, IN.uv);
-                // AO
-                float ambientOcclusion = SAMPLE_TEXTURE2D(_AmbientOcclusion, sampler_AmbientOcclusion, IN.uv).x;
+                float3 metallic = GetMetallic(IN.uv);
 
                 // 变换到切线空间计算
                 // 切线空间到世界空间的变换矩阵
@@ -641,7 +656,9 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                                                         float4(T2W_MATRIX[2], 0),
                                                         float4(0,   0,   0,   1)));
                 
-                float3 viewDirTS = mul(IN.viewDirWS, W2T_MATRIX);
+                float3 lightDirTS = normalize(mul(light.direction, W2T_MATRIX));
+                float3 viewDirTS = normalize(mul(IN.viewDirWS, W2T_MATRIX));
+                float3 halfDirTS = normalize(lightDirTS + viewDirTS);
                 
 
                 // 计算圆锥体radiance
@@ -660,10 +677,20 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 // 添加随机偏移
                 float2 noiseUV0 = InterleavedGradientNoise3D(IN.positionWS * 4.6548792);
                 float2 noiseUV1 = InterleavedGradientNoise3D(IN.positionWS * 7.911131719);
-                float2 randDir = 4.0f * float2(SAMPLE_TEXTURE2D(_WhiteNoise0, sampler_WhiteNoise0, noiseUV0).x, SAMPLE_TEXTURE2D(_WhiteNoise0, sampler_WhiteNoise0, noiseUV1).x) - 2.0f;
+                float2 noiseUV2 = InterleavedGradientNoise3D(-2.7 * IN.positionWS * 2.3579);
+                // 常数：1/根号3
+                const float OneDividSqrtTree = 0.57735f * 1.55;
+                float2 randDir = 2.0f * OneDividSqrtTree * float2(SAMPLE_TEXTURE2D(_WhiteNoise0, sampler_WhiteNoise0, noiseUV0).x, SAMPLE_TEXTURE2D(_WhiteNoise0, sampler_WhiteNoise0, noiseUV1).x) - 1.0 * OneDividSqrtTree;
+                //randDir = 2.0 * ((noiseUV0 + noiseUV1 + noiseUV2) / 3.0) - 1.0;
                 //randDir = 0;
-                for (int i = 0; i < 7; ++i)
-                    dirTS[i] = normalize(dirTS[i] + float3(randDir.xy, 0));
+                // dir[0]是法线，所以要特别计算
+                dirTS[0] = normalize(dirTS[0] + float3(randDir.xy, 0));
+                for (int i = 1; i < 7; ++i)
+                {
+                    float3 unitVecX = cross(dirTS[i], float3(0, 0, 1));
+                    float3 unitVecY = cross(dirTS[i], unitVecX);
+                    dirTS[i] = normalize(dirTS[i] + randDir.x * unitVecX + randDir.y * unitVecY);
+                }
                 
                 // 将其变换为：世界空间
                 float3 dir[7];
@@ -721,33 +748,6 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
 
                         uint3 curr_id = getId(GetCameraPositionWS(), marchPos[i], voxTexSize, voxSize);
 
-                        /*
-                        // 计算当前体素的的中心点
-                        uint3 curID = id / int(pow(2, i));
-                        float3 voxCenterPos = zeroPos + curID * currVoxSize + 0.5f * currVoxSize;
-                        
-                        // 当前体素中心点投影到步进圆盘面的位置 与 步进中心点距离
-                        float dist0 = normalize(cross(voxCenterPos - marchPos[i], dir[i]));
-                        dist0 = Clamp(dist0, 0, currVoxSize);
-                        
-                        float h = sqrt(currVoxSize * currVoxSize - dist0 * dist0);
-                        float tri_area = h * dist0 / 2.0;
-
-                        float cosTheta = dist0 / currVoxSize;
-                        float Theta = 4 * acos(cosTheta);
-                        float sector_area = Theta * currVoxSize * currVoxSize / 8.0f;
-
-                        // 圆面积
-                        float circle_area = PI * currVoxSize * currVoxSize / 4.0f;
-                        // 相交面积
-                        float intersect_area = Clamp(sector_area - tri_area,
-                                                        0, circle_area);
-                        // 面积占比
-                        float area_ratio = intersect_area / circle_area;
-                        // 根据占比累加采样
-                        float currWeight = weight * area_ratio;
-                        */
-
                         // 采样
                         float3 tmp_col = 0;
 
@@ -767,31 +767,25 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                         int tmpSize = voxTexSize * voxTexSize * voxTexSize;
                         int visId = int(tmpSize * (8 - pow(0.125, lodLevel - 1))) / 7 + curID.x * curTexSize * curTexSize + curID.y * curTexSize + curID.z;
                         tmp_col = VoxelTexture[visId].col;
-
+                        
                         // 采样该体素的法线
                         // 用voxNorm和marchingDir，计算一个权重
-                        float angleWeight = sqrt( saturate(dot(dir[i], -normalize(VoxelTexture[visId].norm)) + 0.15f) );    // sqrt和0.15f是模拟散射光波瓣的
-
-
-                        // PBR，启动！
-                        // 计算BRDF颜色
-                        float3 brdf = BRDF(dirTS[i],viewDirTS, normalTS, baseColor, metallic, roughness);
-                        // 渲染方程
-                        float3 Lo = tmp_col.rgb * max(dot(dirTS[i], normalTS), 0) * brdf;
-
-                        float3 halfDirTS = normalize(dirTS[i] + viewDirTS);
-                        Lo = DirectPBR(dot(normalTS, dirTS[i]), dot(normalTS, viewDirTS), dot(normalTS, halfDirTS), dot(halfDirTS, viewDirTS),
-                    baseColor, metallic, roughness, float3(0.04f, 0.04f, 0.04f), tmp_col);
-                
-                        
-                        float currWeight = angleWeight;
-                        sumWeight += currWeight;
-                        //currWeight = weight * (tmp_voxvol / currVoxVol);
-                        //cur_color += VoxelTexture[visIdxLODById(voxTexSize, lodLevel, curr_id)].col / 6.0f;
-                        
-                        cur_color += tmp_col * currWeight;
-                        marchColors[lodLevel] += tmp_col * currWeight;
-                        //weight -= currWeight;
+                        if (VoxelTexture[visId].flags.x != 0)
+                        {
+                            float angleWeight = (dot(dir[i], -normalize(VoxelTexture[visId].norm)) * 0.5 + 0.5);
+                            
+                            // PBR，启动
+                            // 计算该光源到该像素的渲染BRDF
+                            //float3 brdf0 = BRDF(lightDirTS, -dirTS[i], normalize(VoxelTexture[visId].norm), tmp_col, )
+                            // 计算BRDF颜色
+                            float3 brdf = BRDF(normalize(dirTS[i]),viewDirTS, normalTS, baseColor, metallic, roughness);
+                            // 渲染方程
+                            float3 Lo = tmp_col * max(dot(lightDirTS, normalTS), 0) * brdf;
+                            
+                            cur_color += Lo;// * angleWeight;// * currWeight;
+                            float currWeight = 1;
+                            sumWeight += currWeight;
+                        }
                         
                         marchDist *= 2;
                         currVoxSize *= 2;
@@ -802,13 +796,13 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                     i_color += cur_color;
                     dirColors[i] = cur_color;
                 }
-                i_color /= sumWeight;
+                //i_color /= sumWeight;
 
-                // 魔法数，调一下颜色
-                //i_color *= .01;
+                // 魔法数，调一下强度
+                //i_color *= 100;
 
                 // 部分吸收
-                color = i_color * albedo * 1.0 + i_color * 0.0;
+                color = i_color * albedo * 0.9 + i_color * 0.1;
                 // 不吸收
                 //color = i_color;
 
@@ -823,11 +817,11 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 color = VoxelTexture[sampleInfo.visId[0]].col;*/
                 
                 //color = normalize(VoxelTexture[visIdxLODById(voxTexSize, 2, id)].norm * 0.5 + 0.5);
-                //color = VoxelTexture[visIdxLODById(voxTexSize, 0, id)].col;
+                //color = VoxelTexture[visIdxLODById(voxTexSize, 0, id)].norm * 0.5 + 0.5;
                 
                 //color = float3(0.1, 0.5, 0.6);
 
-                //color = IN.normalWS * 0.5 + 0.5;
+                //color = length(dir[0] - IN.normalWS);
 
                 return float4(color.xyz, 1);
             }

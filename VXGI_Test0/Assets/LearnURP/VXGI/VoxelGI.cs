@@ -19,6 +19,9 @@ public class VoxelGI : MonoBehaviour
     [Header("LOD级数")]
     [Range(1, 8)]
     public int lodLevels = 5;
+    [Header("间接光强度")]
+    [Range(0, 20)] 
+    public float indirectLightStrength = 1.0f;
 
     private float voxAreaSize => voxTexSize * voxSize;
 
@@ -71,7 +74,7 @@ public class VoxelGI : MonoBehaviour
         // 初始化体素网格信息
         int initKernel = manageVoxelDataCS.FindKernel("Clear");
         Debug.Log(voxNumber);
-        voxelBuffer = new ComputeBuffer(voxNumber, 36);
+        voxelBuffer = new ComputeBuffer(voxNumber, 60);
         Graphics.SetRandomWriteTarget(1, voxelBuffer, false);
         manageVoxelDataCS.SetBuffer(initKernel, "VoxelTexture", voxelBuffer);
         manageVoxelDataCS.SetInt("voxTexSize", voxTexSize);
@@ -147,13 +150,15 @@ public class VoxelGI : MonoBehaviour
         zeroPos.z = (int)(zeroPos.z / unit) * unit;
         Shader.SetGlobalVector("zeroPos", zeroPos);
         Shader.SetGlobalInt("_LodLevel", lodLevels);
+        
+        Shader.SetGlobalFloat("_IndirectLightStrength", indirectLightStrength);
 
         /*var viewMatrix = View(camTrans);
         Debug.Log("Cam:" + Camera.main.worldToCameraMatrix);
         Debug.Log("My: " + viewMatrix);*/
     }
     // 根据transform计算view矩阵（并非lookat）
-    Matrix4x4 View(Transform tf)
+    public static Matrix4x4 View(Transform tf)
     {
         var view = Matrix4x4.Rotate(Quaternion.Inverse(tf.rotation)) *
                    Matrix4x4.Translate(-tf.position);

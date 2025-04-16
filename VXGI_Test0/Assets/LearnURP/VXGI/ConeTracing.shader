@@ -14,6 +14,9 @@ Shader "LearnURP/ConeTracing"
         _EmitionCol("Emit Color",Color)=(0,0, 0, 0)
         _EmitionStrength("Emit Strength", Float) = 1.0
         _WhiteNoise0("White Noise 0", 2D) = "white"{}
+        _SkyboxCubeMap("Skybox Cube Map", Cube) = "white"{}
+        
+        //_IndirectLightStrength("Indirect Light Strength", Float) = 1.0
     }
     SubShader
     {
@@ -43,9 +46,15 @@ Shader "LearnURP/ConeTracing"
         half4 _EmitionCol;
         float _EmitionStrength;
         float4 _WhiteNoise0_ST;
+
+        float _IndirectLightStrength;
         
         int voxTexSize; // 体素网格边长（一般是256）
         float voxSize;    // 体素大小边长 默认是0.125 1/8
+
+        int _LodLevel;
+
+        
         matrix<float, 4, 4> LookUpViewMat;
         matrix<float, 4, 4> LookForwardViewMat;
         matrix<float, 4, 4> LookRightViewMat;
@@ -53,7 +62,7 @@ Shader "LearnURP/ConeTracing"
         float3 manualCameraPos;
         //matrix<float, 4, 4> TESTMAT;
 
-        int _LodLevel;
+        matrix<float, 4, 4> LastFrameVPMat;
         CBUFFER_END
 
 
@@ -63,6 +72,12 @@ Shader "LearnURP/ConeTracing"
         }
         float Pow2(float x){
             return x * x;
+        }
+        float Pow3(float x){
+            return x * x * x;
+        }
+        int Pow3(int x){
+            return x * x * x;
         }
         // 菲涅尔
         float3 F_SchlickFresnel(float cosTheta, float3 F0){
@@ -193,6 +208,7 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
         TEXTURE2D(_AmbientOcclusion); SAMPLER(sampler_AmbientOcclusion);
         
         TEXTURE2D(_WhiteNoise0); SAMPLER(sampler_WhiteNoise0);
+        TEXTURECUBE(_SkyboxCubeMap); SAMPLER(sampler_SkyboxCubeMap);
         RWStructuredBuffer<VoxelData> VoxelTexture : register(u1); // 表面是1维，实际是三维
 
 
@@ -227,6 +243,7 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
         {
             Tags{
                 "LightMode" = "UniversalForward"
+                //"LightMode" = "11"
             }
             HLSLPROGRAM
             #pragma target 4.5
@@ -261,6 +278,8 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 VertexPositionInputs positionInputs = GetVertexPositionInputs(IN.positionOS.xyz);
                 VertexNormalInputs normalInputs = GetVertexNormalInputs(IN.normalOS.xyz, IN.tangentOS.xyzw);
                 OUT.positionCS = positionInputs.positionCS;
+                // debug
+                //OUT.positionCS = mul(LastFrameVPMat, float4(positionInputs.positionWS, 1.0));
                 OUT.viewDirWS = GetCameraPositionWS() - positionInputs.positionWS;
                 OUT.normalWS = normalInputs.normalWS;
                 OUT.uv=TRANSFORM_TEX(IN.uv,_BaseMap);
@@ -268,6 +287,8 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 OUT.tangentWS.xyz = normalInputs.tangentWS;
                 OUT.tangentWS.w = IN.tangentOS.w;
                 OUT.shadowCoord = GetShadowCoord(positionInputs);
+
+                
                 return OUT;
             }
             // 片元着色器
@@ -321,7 +342,7 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 float3 halfDirTS = normalize(lightDirTS + viewDirTS);
 
                 // 计算BRDF颜色
-                float3 brdf = BRDF(lightDirTS,viewDirTS, normalTS, baseColor, metallic, roughness);
+                float3 brdf = BRDF(lightDirTS,viewDirTS, normalTS, baseColor * ambientOcclusion, metallic, roughness);
                 // 渲染方程
                 float3 Lo = light.distanceAttenuation * light.color.rgb * max(dot(lightDirTS, normalTS), 0) * brdf;
 
@@ -338,9 +359,15 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
 
 
                 // debug 
-                //color = VoxelTexture[visId].col;
+                //color = float(VoxelTexture[visId].flags.x) / 10;
                 //color = dir[0] * 0.5 + 0.5;
                 //color = mul(IN.normalWS, W2T_MATRIX);
+
+                
+                //color = _GlossyEnvironmentColor;
+                //color = SampleSH(IN.normalWS);
+                
+                //color = SAMPLE_TEXTURECUBE(unity_SpecCube0, samplerunity_SpecCube0, IN.normalWS);
 
                 return float4(color.xyz, 1);
             }
@@ -362,6 +389,7 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
 
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN      // URP 主光阴影、联机阴影、屏幕空间阴影
             #pragma multi_compile_fragment _ _SHADOWS_SOFT      // URP 软阴影
+
 
             struct Attributes
             {
@@ -434,6 +462,10 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                     viewMat = LookForwardViewMat;
                     projDir = 2;
                 }
+                // 先计算一个三角形的包围盒
+                float4 triangleAABB = float4(-100, 100, -100, 100); // x_min, x_max, y_min, y_max
+                
+                
                 for (int i = 0; i < 3; i++)
                 {
                     OUT.positionCS = mul(mul(VoxelAreaOrthoMat, viewMat), float4(IN[i].positionWS, 1.0));
@@ -492,7 +524,10 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 float3 normalTS = GetNormalTS(IN.uv);
                 // 金属度
                 float3 metallic = GetMetallic(IN.uv);
+                // AO
+                float ambientOcclusion = GetAO(IN.uv);
 
+                /*
                 // 变换到切线空间计算
                 real3x3 T2W_MATRIX = CreateTangentToWorld(IN.normalWS, IN.tangentWS.xyz, IN.tangentWS.w);
                 real3x3 W2T_MATRIX = Inverse(real4x4(
@@ -508,16 +543,18 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 float3 brdf = BRDF(lightDirTS,viewDirTS, normalTS, baseColor, metallic, roughness);
                 // 渲染方程
                 float3 Lo = light.distanceAttenuation * light.color.rgb * max(dot(lightDirTS, normalTS), 0) * brdf;
+                */
 
                 /*Lo = DirectPBR(dot(normalTS, lightDirTS), dot(normalTS, viewDirTS), dot(normalTS, halfDirTS), dot(halfDirTS, viewDirTS),
                     baseColor, metallic, roughness, float3(0.04f, 0.04f, 0.04f), light.color);*/
-                color = Lo;
+
+                color = baseColor;
 
                 
                 float shadow = MainLightRealtimeShadow(TransformWorldToShadowCoord(IN.positionWS));
                 color *= shadow;
                 // 自发光
-                color += _EmitionCol * _EmitionStrength;
+                //color += _EmitionCol * _EmitionStrength;
 
                 // 根据世界空间位置写入VoxelTexrure
                 // 计算VoxelTexture所需id
@@ -525,8 +562,15 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 VIS_VOX_IDX(id);
 
                 int curr_flag_x = VoxelTexture[visitVoxIndex(id, voxTexSize)].flags.x;
-                
+
+                // color实际上是albedo
                 VoxelTexture[visitVoxIndex(id, voxTexSize)].col =  (color + curr_flag_x * VoxelTexture[visitVoxIndex(id, voxTexSize)].col) / float(curr_flag_x + 1);
+
+                float3 curARM = float3(ambientOcclusion, roughness.x, metallic.x);
+                VoxelTexture[visitVoxIndex(id, voxTexSize)].arm =  (curARM + curr_flag_x * VoxelTexture[visitVoxIndex(id, voxTexSize)].arm) / float(curr_flag_x + 1);
+
+                float3 curEmit = _EmitionCol * _EmitionStrength;
+                VoxelTexture[visitVoxIndex(id, voxTexSize)].emit =  (curEmit + curr_flag_x * VoxelTexture[visitVoxIndex(id, voxTexSize)].emit) / float(curr_flag_x + 1);
                 
                 VoxelTexture[visitVoxIndex(id, voxTexSize)].norm = normalize(normalize(IN.normalWS) + curr_flag_x * VoxelTexture[visitVoxIndex(id, voxTexSize)].norm);
                 
@@ -546,6 +590,7 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
         {
             Tags{
                 "LightMode" = "IndirectLight"
+                //"LightMode" = "UniversalForward"
             }
             HLSLPROGRAM
             #pragma target 4.5
@@ -591,16 +636,20 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
             }
 
             // 噪声，每帧调用结果都不同
+            float InterleavedGradientNoise(float x)
+            {
+                return frac(52.9829189f * frac((x * 0.6711056f) * frac(x * 0.6558879f + (_Time.w) * 19.7583715f)));
+            }
             float2 InterleavedGradientNoise2D(float2 v) {
                 return float2(
-                    frac(52.9829189f * frac((v.x * 0.6711056f + v.y * 0.0583715f) * frac(v.y * 0.6558879f + (_Time.z) * 0.0583715f))),
-                    frac(19.5246817f * frac((v.y * 0.8798958f + v.x * 0.4791113579f) * frac(v.x * 0.6558879f + (_Time.z) * 0.0583715f)))
+                    frac(52.9829189f * frac((v.x * 0.6711056f + v.y * 0.0583715f) * frac(v.y * 0.6558879f + (_Time.w) * 19.7583715f))),
+                    frac(19.5246817f * frac((v.y * 0.8798958f + v.x * 0.4791113579f) * frac(v.x * 0.6558879f + (_Time.w) * 19.7583715f)))
                     );
             }
             float2 InterleavedGradientNoise3D(float3 v) {
                 return float2(
-                    frac(52.9829189f * frac((v.x * 0.6711056f + v.y * 0.0583715f) * frac(v.z * 0.6558879f + (_Time.z) * 0.0583715f))),
-                    frac(19.5246817f * frac((v.y * 0.8798958f + v.z * 0.4791113579f) * frac(v.x * 0.6558879f + (_Time.z) * 0.0583715f)))
+                    frac(52.9829189f * frac((v.x * 0.6711056f + v.y * 0.0583715f) * frac(v.z * 0.6558879f + (_Time.w) * 19.7583715f))),
+                    frac(19.5246817f * frac((v.y * 0.8798958f + v.z * 0.4791113579f) * frac(v.x * 0.6558879f + (_Time.w) * 19.7583715f)))
                     );
             }
             // 片元着色器
@@ -646,6 +695,8 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 float3 normalTS = GetNormalTS(IN.uv);
                 // 金属度
                 float3 metallic = GetMetallic(IN.uv);
+                // AO
+                float ambientOcclusion = GetAO(IN.uv);
 
                 // 变换到切线空间计算
                 // 切线空间到世界空间的变换矩阵
@@ -718,8 +769,10 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 {
                     marchColors[i] = 0;
                 }
+                float notEndCnt = 0;
 
-                float sumWeight = 0;// 权重之和
+                // 七个方向的权重应该一致
+                // 在将七个方向的追踪结果颜色加和之前，需要先将他们按照权重归一化
                 for (int i = 0; i < 7; ++i){
                     float3 cur_color = 0;
                     dirColors[i] = 0;
@@ -735,6 +788,9 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                     int currVoxVol = 1;
                     // 权重步进动态维护
                     float weight = 1.0f;
+                    float sumWeight = 0;// 权重之和
+
+                    bool notEnd = false;
                     // 每次步进，访问LOD级别都增大
                     for (int lodLevel = 0; lodLevel < _LodLevel; ++lodLevel)
                     {
@@ -749,7 +805,9 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                         uint3 curr_id = getId(GetCameraPositionWS(), marchPos[i], voxTexSize, voxSize);
 
                         // 采样
-                        float3 tmp_col = 0;
+                        float3 tmp_albedo = 0;
+                        float3 tmp_norm = 0;
+                        float3 tmp_arm = 0;
 
                         // TODO：将采样变成正确的插值采样
                         /*linearSampleInfo sampleInfo = sampleVoxLinear(GetCameraPositionWS(), marchPos[i], voxTexSize, voxSize, lodLevel);
@@ -766,45 +824,97 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                         curID = idxx / int(pow(2, lodLevel));
                         int tmpSize = voxTexSize * voxTexSize * voxTexSize;
                         int visId = int(tmpSize * (8 - pow(0.125, lodLevel - 1))) / 7 + curID.x * curTexSize * curTexSize + curID.y * curTexSize + curID.z;
-                        tmp_col = VoxelTexture[visId].col;
+                        tmp_albedo = VoxelTexture[visId].col;
+                        tmp_norm = normalize(VoxelTexture[visId].norm);
+                        tmp_arm = VoxelTexture[visId].arm;
                         
                         // 采样该体素的法线
                         // 用voxNorm和marchingDir，计算一个权重
                         if (VoxelTexture[visId].flags.x != 0)
                         {
-                            float angleWeight = (dot(dir[i], -normalize(VoxelTexture[visId].norm)) * 0.5 + 0.5);
                             
                             // PBR，启动
-                            // 计算该光源到该像素的渲染BRDF
-                            //float3 brdf0 = BRDF(lightDirTS, -dirTS[i], normalize(VoxelTexture[visId].norm), tmp_col, )
-                            // 计算BRDF颜色
-                            float3 brdf = BRDF(normalize(dirTS[i]),viewDirTS, normalTS, baseColor, metallic, roughness);
-                            // 渲染方程
-                            float3 Lo = tmp_col * max(dot(lightDirTS, normalTS), 0) * brdf;
                             
-                            cur_color += Lo;// * angleWeight;// * currWeight;
-                            float currWeight = 1;
+                            // 构建当前体素的切线空间
+                            float3 tmp_tangent = normalize(cross(float3(0, 0, 1), tmp_arm));
+                            real3x3 T2W_MATRIX_0 = CreateTangentToWorld(tmp_norm, tmp_tangent, 1);
+                            real3x3 W2T_MATRIX_0 = Inverse(real4x4(
+                                                        float4(T2W_MATRIX_0[0], 0),
+                                                        float4(T2W_MATRIX_0[1], 0),
+                                                        float4(T2W_MATRIX_0[2], 0),
+                                                        float4(0,    0,    0,   1)));
+                            float3 tmp_viewDirTS = normalize(mul(-dir[i], W2T_MATRIX_0));
+                            
+                            // 计算该光源到该像素的渲染BRDF
+                            float3 brdf0 = BRDF(light.direction, -dir[i], normalize(VoxelTexture[visId].norm), tmp_albedo * tmp_arm.r, tmp_arm.z, tmp_arm.y, tmp_arm.x);
+                            float3 Lo0 = light.color * light.distanceAttenuation * max(dot(normalize(light.direction), tmp_norm), 0) * brdf0;
+                            // 计算BRDF颜色
+                            float3 brdf = BRDF(normalize(dirTS[i]),viewDirTS, normalTS, baseColor * ambientOcclusion, metallic, roughness);
+                            // 渲染方程
+                            float3 Lo = (Lo0 + VoxelTexture[visId].emit) * max(dot(normalize(dirTS[i]), normalTS), 0) * brdf;
+
+                            
+                            // 计算体素体积百分比
+                            float volRatio = float(VoxelTexture[visId].flags.x) / float(currVoxVol);
+                            // 体积百分比还要乘以一个方向系数，而这个方向系数取决于当前法线和体素法线的相近程度，还要乘以一个LOD系数（我们认为最小LOD的体素因法线偏离带来的遮挡减小最小）
+                            float angleWeight = (dot(dir[i], -normalize(VoxelTexture[visId].norm)) * 0.5 + 0.5);
+                            float lodWeight = float(lodLevel) / _LodLevel;
+                            // lodWeight添加随机
+                            lodWeight *= 1.0 + noiseUV2.y * 0.2 - 0.1;
+                            
+                            volRatio = volRatio * (angleWeight * lodWeight + 1.0 * (1.0 - lodWeight));
+
+                            // 权重
+                            float currWeight = volRatio * (1 + noiseUV2.x * 0.2 - 0.1);
+                            weight -= currWeight;   // 核心：遮挡
                             sumWeight += currWeight;
+                            
+                            cur_color += Lo;// * volRatio;
+
                         }
                         
                         marchDist *= 2;
                         currVoxSize *= 2;
                         currVoxVol *= 8;
+
+                        notEnd = (weight > 0.01 && lodLevel == _LodLevel - 1) ? true : false;
+                        notEndCnt += notEnd ? 1 : 0;
                     }
+                    
                     /*if (weight > 0.01)
                         cur_color /= 1.0f - saturate(weight);*/
+                    cur_color /= sumWeight;
+
+                    // 计算天空球环境光
+                    half3 currAmbientCol = SAMPLE_TEXTURECUBE(_SkyboxCubeMap, sampler_SkyboxCubeMap, dir[i]);// 计算BRDF颜色
+                    float3 brdf = BRDF(normalize(dirTS[i]),viewDirTS, normalTS, baseColor * ambientOcclusion, metallic, roughness);
+                    // 渲染方程
+                    float3 Lo = currAmbientCol * max(dot(normalize(dirTS[i]), normalTS), 0) * brdf;
+                    //cur_color += currAmbientCol;
+                    cur_color += notEnd ? Lo * 7 : 0;
+                    
+                    sumWeight = 0;
                     i_color += cur_color;
                     dirColors[i] = cur_color;
                 }
-                //i_color /= sumWeight;
+                i_color /= 7.0f;
 
-                // 魔法数，调一下强度
-                //i_color *= 100;
+                // 调一下强度
+                i_color *= _IndirectLightStrength;
+                // clamp一下，避免过亮或过暗
+                float i_lum = Luminance(i_color);
+                if (i_lum >= 5)
+                {
+                    i_color *= 5.0 / i_lum;
+                }
+                // 神奇的是：notEndCnt可以部分代表AO
+                //i_color *= pow(notEndCnt / 7.0f, 0.1);
+                
 
                 // 部分吸收
-                color = i_color * albedo * 0.9 + i_color * 0.1;
-                // 不吸收
-                //color = i_color;
+                //color = i_color * albedo * 0.9 + i_color * 0.1;
+                // 不吸收，现在有brdf干这个事情
+                color = i_color;
 
                 // debug
 
@@ -822,13 +932,153 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 //color = float3(0.1, 0.5, 0.6);
 
                 //color = length(dir[0] - IN.normalWS);
+                
+                //color = _GlossyEnvironmentColor;
+                //color = SampleSH(IN.normalWS);
+                
+                /*// 计算天空球环境光
+                float3 tmpLightDir = normalize(reflect(-IN.viewDirWS, IN.normalWS));
+                half3 currAmbientCol = SAMPLE_TEXTURECUBE(_SkyboxCubeMap, sampler_SkyboxCubeMap, tmpLightDir);// 计算BRDF颜色
+                float3 brdf = BRDF(tmpLightDir,viewDirTS, normalTS, baseColor * ambientOcclusion, metallic, roughness, true
+                    );
+                // 渲染方程
+                float3 Lo = currAmbientCol * max(dot(tmpLightDir, normalTS), 0) * brdf;
+                color = Lo;*/
+
+                //color = notEndCnt / 7.0f;
+
+                return float4(color.xyz, 1);
+            }
+            ENDHLSL
+        }
+        
+        Pass
+        {
+            Tags{
+                "LightMode" = "MotionVector"
+            }
+            HLSLPROGRAM
+            #pragma target 4.5
+            #pragma vertex vert
+            #pragma fragment frag
+
+            struct Attributes
+            {
+                float4 positionOS : POSITION;
+                float3 normalOS : NORMAL;
+                float4 tangentOS : TANGENT;
+                float2 uv : TEXCOORD0;
+            };
+
+            struct Varings
+            {
+                float4 positionCS : SV_POSITION;
+                float2 uv : TEXCOORD0;
+                float3 viewDirWS : TEXCOORD1;
+                float3 normalWS : TEXCOORD2;
+                float3 positionWS : TEXCOORD3;
+            };
+
+            // 顶点着色器
+            Varings vert (Attributes IN)
+            {
+                Varings OUT;
+                VertexPositionInputs positionInputs = GetVertexPositionInputs(IN.positionOS.xyz);
+                VertexNormalInputs normalInputs = GetVertexNormalInputs(IN.normalOS.xyz, IN.tangentOS.xyzw);
+                OUT.positionCS = positionInputs.positionCS;
+                OUT.viewDirWS = GetCameraPositionWS() - positionInputs.positionWS;
+                OUT.normalWS = normalInputs.normalWS;
+                OUT.uv=TRANSFORM_TEX(IN.uv,_BaseMap);
+                OUT.positionWS = positionInputs.positionWS;
+                return OUT;
+            }
+            // 片元着色器
+            float4 frag (Varings IN) : SV_Target
+            {
+                float3 color = 0;
+
+                // debug 
+                //color = float(VoxelTexture[visId].flags.x) / 10;
+                //color = dir[0] * 0.5 + 0.5;
+                //color = mul(IN.normalWS, W2T_MATRIX);
 
                 return float4(color.xyz, 1);
             }
             ENDHLSL
         }
         UsePass "Universal Render Pipeline/Lit/DepthOnly"
-        UsePass "Universal Render Pipeline/Lit/DepthNormals"
+        //UsePass "Universal Render Pipeline/Lit/DepthNormals"
+        Pass
+        {
+            Name "DepthNormals"
+            Tags
+            {
+                "LightMode" = "DepthNormals"
+            }
+
+            // -------------------------------------
+            // Render State Commands
+            ZWrite On
+            Cull[_Cull]
+
+            HLSLPROGRAM
+            #pragma target 4.5
+            #pragma vertex vert
+            #pragma fragment frag
+
+            struct Attributes
+            {
+                float4 positionOS : POSITION;
+                float3 normalOS : NORMAL;
+                float4 tangentOS : TANGENT;
+                float2 uv : TEXCOORD0;
+            };
+
+            struct Varings
+            {
+                float4 positionCS : SV_POSITION;
+                float2 uv : TEXCOORD0;
+                float3 viewDirWS : TEXCOORD1;
+                float3 normalWS : TEXCOORD2;
+                float3 positionWS : TEXCOORD3;
+                float4 tangentWS : TEXCOORD4;
+            };
+
+            // 顶点着色器
+            Varings vert (Attributes IN)
+            {
+                Varings OUT;
+                VertexPositionInputs positionInputs = GetVertexPositionInputs(IN.positionOS.xyz);
+                VertexNormalInputs normalInputs = GetVertexNormalInputs(IN.normalOS.xyz, IN.tangentOS.xyzw);
+                OUT.positionCS = positionInputs.positionCS;
+                // debug
+                //OUT.positionCS = mul(LastFrameVPMat, float4(positionInputs.positionWS, 1.0));
+                OUT.viewDirWS = GetCameraPositionWS() - positionInputs.positionWS;
+                OUT.normalWS = normalInputs.normalWS;
+                OUT.uv=TRANSFORM_TEX(IN.uv,_BaseMap);
+                OUT.positionWS = positionInputs.positionWS;
+                OUT.tangentWS.xyz = normalInputs.tangentWS;
+                OUT.tangentWS.w = IN.tangentOS.w;
+                return OUT;
+            }
+            // 片元着色器
+            float4 frag (Varings IN) : SV_Target
+            {
+                // PBR，启动！
+                float3 normalTS = GetNormalTS(IN.uv);
+
+                // 变换到切线空间计算
+                real3x3 T2W_MATRIX = CreateTangentToWorld(IN.normalWS, IN.tangentWS.xyz, IN.tangentWS.w);
+                real3x3 W2T_MATRIX = Inverse(real4x4(
+                                                        float4(T2W_MATRIX[0], 0),
+                                                        float4(T2W_MATRIX[1], 0),
+                                                        float4(T2W_MATRIX[2], 0),
+                                                        float4(0,   0,   0,   1)));
+                float3 color = normalize(mul(normalTS, T2W_MATRIX));
+                return float4(color.xyz, 1);
+            }
+            ENDHLSL
+        }
         UsePass "Universal Render Pipeline/Lit/ShadowCaster"    // 产生投影
     }
 }

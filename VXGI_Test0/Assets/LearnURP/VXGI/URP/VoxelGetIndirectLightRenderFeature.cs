@@ -59,7 +59,7 @@ public class VoxelGetIndirectLightRenderFeature : ScriptableRendererFeature
     {
         m_ScriptablePass = new VoxelRenderPass();
         // Configures where the render pass should be injected.
-        m_ScriptablePass.renderPassEvent = RenderPassEvent.BeforeRenderingOpaques;
+        m_ScriptablePass.renderPassEvent = RenderPassEvent.AfterRenderingOpaques;
         m_ScriptablePass.ilRT = ilRT;
     }
     public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)

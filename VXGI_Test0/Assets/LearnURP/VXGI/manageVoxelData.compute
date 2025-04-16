@@ -19,6 +19,9 @@ void Clear (uint3 id : SV_DispatchThreadID)
     int idx = visitVoxIndex(id, voxTexSize);
     VoxelTexture[idx].flags.xyz = uint3(0, 0, 0);
     VoxelTexture[idx].col.xyz = 0;
+    VoxelTexture[idx].norm.xyz = 0;
+    VoxelTexture[idx].arm.xyz = 0;
+    VoxelTexture[idx].emit.xyz = 0;
     //VoxelTexture[idx].col.xyz = float3(id.x / 256.0f, id.y / 256.0f, id.z / 256.0f);
 }
 
@@ -44,8 +47,12 @@ void CalculateLOD(uint3 id : SV_DispatchThreadID)
     int voxExist = 0;
     // 颜色之和
     float3 colSum = 0;
-
+    // 法线之和
     float3 normSum = 0;
+    // arm之和
+    float3 armSum = 0;
+    // 自发光之和
+    float3 emitSum = 0;
 
     // 开始算8个位置
     int baseIdx[8];
@@ -81,6 +88,8 @@ void CalculateLOD(uint3 id : SV_DispatchThreadID)
             voxExist += VoxelTexture[baseIdx[i]].flags.x;
             colSum += VoxelTexture[baseIdx[i]].col * (float)VoxelTexture[baseIdx[i]].flags.x;
             normSum += VoxelTexture[baseIdx[i]].norm * (float)VoxelTexture[baseIdx[i]].flags.x;
+            armSum += VoxelTexture[baseIdx[i]].arm * (float)VoxelTexture[baseIdx[i]].flags.x;
+            emitSum += VoxelTexture[baseIdx[i]].emit * (float)VoxelTexture[baseIdx[i]].flags.x;
         }
     }
 
@@ -89,11 +98,15 @@ void CalculateLOD(uint3 id : SV_DispatchThreadID)
         VoxelTexture[currIdx].flags.x = voxExist;
         VoxelTexture[currIdx].col = colSum / voxExist;
         VoxelTexture[currIdx].norm = normSum == 0 ? 0 : normalize(normSum);
+        VoxelTexture[currIdx].arm = armSum / voxExist;
+        VoxelTexture[currIdx].emit = emitSum / voxExist;
     }else
     {
         VoxelTexture[currIdx].flags.x = 0;
         VoxelTexture[currIdx].col = 0;
         VoxelTexture[currIdx].norm = 0;
+        VoxelTexture[currIdx].arm = 0;
+        VoxelTexture[currIdx].emit = 0;
     }
 
     // debug

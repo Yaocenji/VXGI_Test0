@@ -48,8 +48,7 @@ Shader "LearnURP/VXGISpaceFilter"
                 return OUT;
             }
 
-            TEXTURE2D(_MainTex);
-            SAMPLER(sampler_MainTex);
+            TEXTURE2D(_MainTex); SAMPLER(sampler_MainTex);
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareNormalsTexture.hlsl"
 
@@ -63,17 +62,21 @@ Shader "LearnURP/VXGISpaceFilter"
 
                 // 先实现高斯
                 float3 ansCol = 0;
-                float sigma = 2;
+                float sigma = 4;
                 float weight, sumWeight = 0;
                 float dist2;
+
+                // debug
+                float n = 0;
                 for (int i = -sigma; i <= sigma; ++i)
                 {
                     for (int j = -sigma; j <= sigma; ++j)
                     {
                         // 计算基础权重
+                        // 距离
                         dist2 = i * i + j * j;
+                        // 基础距离高斯权重
                         weight = 0.5 / PI / sigma * exp(- dist2 * 0.5 / (sigma * sigma));
-                        sumWeight += weight;
 
                         float2 currUV = IN.uv;
                         currUV += float2(i, j) * float2(_ScreenParams.z - 1, _ScreenParams.w - 1);
@@ -84,18 +87,25 @@ Shader "LearnURP/VXGISpaceFilter"
                         float currDepthEye = LinearEyeDepth(SAMPLE_TEXTURE2D(_CameraDepthTexture, sampler_CameraDepthTexture, currUV).x, _ZBufferParams);
 
                         // 计算法线、深度权重
-                        float normalWeight = saturate(1.0 - length(currNormal - normal) / 1.414);
-                        float depthWeight = exp(-abs(currDepthEye - depthEye) * sigma);
+                        float normalWeight = pow(saturate(1.0 - length(currNormal - normal)) * 5, 10);
+                        float depthWeight = exp(-abs(currDepthEye - depthEye) * 100);
                         weight *= normalWeight * depthWeight;
-                        
+
+                        // 计算总权重
+                        sumWeight += weight;
                         ansCol += currCol * weight;
+
+                        // debug
+                        //n += depthWeight;
                     }
                 }
                 ansCol /= sumWeight;
                 
                 col.xyz = ansCol;
                 col.w = 1;
-                
+
+                // debug
+                //col = n / float(sigma * sigma);
                 return col;
             }
             ENDHLSL

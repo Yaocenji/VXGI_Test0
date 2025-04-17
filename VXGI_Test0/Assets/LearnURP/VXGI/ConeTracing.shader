@@ -746,9 +746,9 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 dirTS[6] = normalize(float3( 3, -1.73205, 2));
 
                 // 添加随机偏移
-                float2 noiseUV0 = InterleavedGradientNoise3D(IN.positionWS * 4.6548792);
-                float2 noiseUV1 = InterleavedGradientNoise3D(IN.positionWS * 7.911131719);
-                float2 noiseUV2 = InterleavedGradientNoise3D(-2.7 * IN.positionWS * 2.3579);
+                float2 noiseUV0 = InterleavedGradientNoise3D(IN.positionWS * 100 * 4.6548792);
+                float2 noiseUV1 = InterleavedGradientNoise3D(IN.positionWS * 100 * 7.911131719);
+                float2 noiseUV2 = InterleavedGradientNoise3D(-2.7 * IN.positionWS * 100 * 2.3579);
                 // 常数：1/根号3
                 const float OneDividSqrtTree = 0.57735f * 1.55;
                 float2 randDir = 2.0f * OneDividSqrtTree * float2(SAMPLE_TEXTURE2D(_WhiteNoise0, sampler_WhiteNoise0, noiseUV0).x, SAMPLE_TEXTURE2D(_WhiteNoise0, sampler_WhiteNoise0, noiseUV1).x) - 1.0 * OneDividSqrtTree;
@@ -801,7 +801,7 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                     #ifdef _CONSERV_RASTER_ON
                     marchPos[i] += VoxelTexture[visId].flags.x > 0 ? 1.1 * voxSize * IN.normalWS : 0;
                     #else
-                    marchPos[i] += 0.415 * voxSize * dir[i];
+                    marchPos[i] += 0.51 * voxSize * IN.normalWS;
                     #endif
                     
                     // 步进
@@ -995,18 +995,14 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
             struct Attributes
             {
                 float4 positionOS : POSITION;
-                float3 normalOS : NORMAL;
-                float4 tangentOS : TANGENT;
-                float2 uv : TEXCOORD0;
             };
 
             struct Varings
             {
                 float4 positionCS : SV_POSITION;
-                float2 uv : TEXCOORD0;
-                float3 viewDirWS : TEXCOORD1;
-                float3 normalWS : TEXCOORD2;
-                float3 positionWS : TEXCOORD3;
+                float3 positionWS : TEXCOORD0;
+                float4 positionSS_thisFrame : TEXCOORD1;
+                float4 positionSS_lastFrame : TEXCOORD2;
             };
 
             // 顶点着色器
@@ -1014,25 +1010,22 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
             {
                 Varings OUT;
                 VertexPositionInputs positionInputs = GetVertexPositionInputs(IN.positionOS.xyz);
-                VertexNormalInputs normalInputs = GetVertexNormalInputs(IN.normalOS.xyz, IN.tangentOS.xyzw);
                 OUT.positionCS = positionInputs.positionCS;
-                OUT.viewDirWS = GetCameraPositionWS() - positionInputs.positionWS;
-                OUT.normalWS = normalInputs.normalWS;
-                OUT.uv=TRANSFORM_TEX(IN.uv,_BaseMap);
                 OUT.positionWS = positionInputs.positionWS;
+                OUT.positionSS_thisFrame = ComputeScreenPos(OUT.positionCS);
+                OUT.positionSS_lastFrame = ComputeScreenPos(mul(LastFrameVPMat, float4(positionInputs.positionWS, 1.0)));
                 return OUT;
             }
             // 片元着色器
             float4 frag (Varings IN) : SV_Target
             {
-                float3 color = 0;
-
-                // debug 
-                //color = float(VoxelTexture[visId].flags.x) / 10;
-                //color = dir[0] * 0.5 + 0.5;
-                //color = mul(IN.normalWS, W2T_MATRIX);
-
-                return float4(color.xyz, 1);
+                float4 positionSS_thisFrame = IN.positionSS_thisFrame;
+                float4 positionSS_lastFrame = IN.positionSS_lastFrame;
+                positionSS_thisFrame /= positionSS_thisFrame.w;
+                positionSS_lastFrame /= positionSS_lastFrame.w;
+                //positionSS_lastFrame.y = 1 - positionSS_lastFrame.y;
+                //return float4(positionSS_lastFrame.xy, 0, 1);
+                return float4((positionSS_lastFrame.xy - positionSS_thisFrame.xy), 0, 1);
             }
             ENDHLSL
         }

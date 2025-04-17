@@ -49,6 +49,7 @@ Shader "LearnURP/VXGISpaceFilter"
             }
 
             TEXTURE2D(_MainTex); SAMPLER(sampler_MainTex);
+            TEXTURE2D_X(_MotionVectorTexture); SAMPLER(sampler_MotionVectorTexture);
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareNormalsTexture.hlsl"
 
@@ -106,6 +107,8 @@ Shader "LearnURP/VXGISpaceFilter"
 
                 // debug
                 //col = n / float(sigma * sigma);
+                //col =  SAMPLE_TEXTURE2D_X(_MotionVectorTexture, sampler_MotionVectorTexture, IN.uv);
+                
                 return col;
             }
             ENDHLSL

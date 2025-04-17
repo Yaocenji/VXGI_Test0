@@ -249,7 +249,7 @@ Transform:
   m_GameObject: {fileID: 662776018}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 0.7071068, z: -0, w: 0.7071068}
-  m_LocalPosition: {x: 0, y: 0, z: 16}
+  m_LocalPosition: {x: 0, y: 0, z: 32}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -280,7 +280,7 @@ Transform:
   m_GameObject: {fileID: 828698365}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 16, y: 0, z: 0}
+  m_LocalPosition: {x: 32, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -421,9 +421,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   voxTexSize: 128
-  voxSize: 0.25
+  voxSize: 0.5
   lodLevels: 7
-  indirectLightStrength: 0.5
+  indirectLightStrength: 1
   manageVoxelDataCS: {fileID: 7200000, guid: 86106b4d96175364991387f58169f984, type: 3}
   LookUpTrans: {fileID: 1228891979}
   LookForwardTrans: {fileID: 828698366}
@@ -471,7 +471,7 @@ Transform:
   m_GameObject: {fileID: 1228891978}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 0.7071068, z: 0.7071068, w: 0}
-  m_LocalPosition: {x: 16, y: -16, z: 16}
+  m_LocalPosition: {x: 32, y: -32, z: 32}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -488,8 +488,8 @@ GameObject:
   - component: {fileID: 1687258585}
   - component: {fileID: 1687258584}
   - component: {fileID: 1687258582}
-  - component: {fileID: 1687258583}
   - component: {fileID: 1687258586}
+  - component: {fileID: 1687258583}
   - component: {fileID: 1687258587}
   m_Layer: 0
   m_Name: Main Camera
@@ -606,13 +606,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1687258581}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.0013088372, y: 0.9998785, z: -0.015532791, w: 0.000020332363}
+  m_LocalRotation: {x: 0, y: 1, z: 0, w: 0}
   m_LocalPosition: {x: 14.7, y: -3.8, z: 31.9}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 1.78, y: 180, z: 0.15}
+  m_LocalEulerAnglesHint: {x: 0, y: 180, z: 0}
 --- !u!114 &1687258586
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -666,14 +666,12 @@ MonoBehaviour:
   m_GameObject: {fileID: 1687258581}
   m_Enabled: 0
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 2e35998d1eac9a949876d54a4718b0cc, type: 3}
+  m_Script: {fileID: 11500000, guid: 00265854ea658454d913395e610c9882, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  oneCycleTime: 0.02
+  oneCycleTime: 2
   axis: 1
   otherAxisValue: 0
-  baseLightStrength: 15
-  lightStrengthAmplitude: 10
 --- !u!1 &2138677391
 GameObject:
   m_ObjectHideFlags: 0

@@ -8,22 +8,29 @@ public class MotionVectorFeature : ScriptableRendererFeature
     public RenderTexture motionVectorRT;
     class MotionVectorRenderPass : ScriptableRenderPass
     {
+        public static int cnt_debug = 0;
         public RenderTexture motionVectorRT;
         public Camera mainCam;
         private Matrix4x4 lastMat_V;
         private Matrix4x4 lastMat_P;
         public override void OnCameraSetup(CommandBuffer cmd, ref RenderingData renderingData)
         {
+            //ConfigureInput(ScriptableRenderPassInput.Motion);
             ConfigureTarget(motionVectorRT);
             ConfigureClear(ClearFlag.All, Color.black);
+            Shader.SetGlobalMatrix("LastFrameVPMat", lastMat_P * lastMat_V);
+            
+            //Debug.Log("这是Setup第" + cnt_debug + "帧");
         }
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
         {
-            CommandBuffer cmd = CommandBufferPool.Get("GetIndirectLight");
+            CommandBuffer cmd = CommandBufferPool.Get("Motion Vector");
             
             context.SetupCameraProperties(renderingData.cameraData.camera);
             cmd.SetRenderTarget(motionVectorRT);
             context.ExecuteCommandBuffer(cmd);
+            
+            
             // 临时DrawSetting
             DrawingSettings drawSetting = new DrawingSettings(new ShaderTagId("MotionVector"),
                 new SortingSettings(Camera.main));
@@ -35,17 +42,22 @@ public class MotionVectorFeature : ScriptableRendererFeature
             context.DrawRenderers(cullResults, ref drawSetting, ref fs);
 
             
+            cmd.Clear();
+            cmd.Release();
+            
+            
+            //Debug.Log("这是Execute第" + cnt_debug + "帧");
+        }
+        public override void OnCameraCleanup(CommandBuffer cmd)
+        {
             // 更新VP矩阵
             lastMat_V = VoxelGI.View(mainCam.transform);
             lastMat_P = GL.GetGPUProjectionMatrix( Matrix4x4.Perspective(mainCam.fieldOfView, (float)(Screen.width) / (float)(Screen.height),
                 mainCam.nearClipPlane, mainCam.farClipPlane), true);
-            Shader.SetGlobalMatrix("LastFrameVPMat", lastMat_P * lastMat_V);
             
-            cmd.Clear();
-            cmd.Release();
-        }
-        public override void OnCameraCleanup(CommandBuffer cmd)
-        {
+            
+            /*Debug.Log("这是Cleanup第" + cnt_debug + "帧");
+            cnt_debug++;*/
         }
     }
 

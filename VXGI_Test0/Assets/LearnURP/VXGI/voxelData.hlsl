@@ -6,6 +6,7 @@ struct VoxelData{
     float3 norm;
     float3 arm;     // AO/Roughness/Metallic
     float3 emit;    // 自发光
+    float3 lastCol; // 上一帧的颜色
 };
 
 cbuffer UnityPerMaterial

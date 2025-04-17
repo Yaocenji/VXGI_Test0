@@ -667,7 +667,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!135 &769416990
 SphereCollider:
   m_ObjectHideFlags: 0
@@ -1046,6 +1046,7 @@ MonoBehaviour:
   voxTexSize: 128
   voxSize: 0.25
   lodLevels: 7
+  indirectLightStrength: 0.2
   manageVoxelDataCS: {fileID: 7200000, guid: 86106b4d96175364991387f58169f984, type: 3}
   LookUpTrans: {fileID: 1228891979}
   LookForwardTrans: {fileID: 828698366}
@@ -3302,13 +3303,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2138677391}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.5195965, y: -0.026175141, z: -0.74295205, w: 0.4211372}
+  m_LocalRotation: {x: 0.7938864, y: -0.2091327, z: -0.4378386, w: 0.36647677}
   m_LocalPosition: {x: 8.33, y: 9.31, z: 11.19}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 156.5, y: 120.01, z: 45.4}
+  m_LocalEulerAnglesHint: {x: 156.5, y: 67.7, z: 45.4}
 --- !u!114 &2138677394
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -3347,6 +3348,8 @@ MonoBehaviour:
   oneCycleTime: 10
   axis: 1
   otherAxisValue: 45
+  baseLightStrength: 15
+  lightStrengthAmplitude: 10
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

@@ -13,11 +13,19 @@ public class LightMove : MonoBehaviour
     
     [Header("其他轴")]
     public float otherAxisValue = 45;
+
+    [Header("基础光强")] 
+    public float baseLightStrength = 15.0f;
+    [Header("光强波动范围")] 
+    public float lightStrengthAmplitude = 10.0f;
+
+    private Light _light;
     
     private Transform tr;
     void Start()
     {
         tr = transform;
+        _light = GetComponent<Light>();
     }
 
     // Update is called once per frame
@@ -29,5 +37,7 @@ public class LightMove : MonoBehaviour
             tr.rotation = Quaternion.Euler(otherAxisValue, Time.time * (360.0f / oneCycleTime) % 360, otherAxisValue);
         if (axis == 2)
             tr.rotation = Quaternion.Euler(otherAxisValue, otherAxisValue, Time.time * (360.0f / oneCycleTime) % 360);
+
+        _light.intensity = baseLightStrength + Mathf.Sin(Time.time) * lightStrengthAmplitude;
     }
 }

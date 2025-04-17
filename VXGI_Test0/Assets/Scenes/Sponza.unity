@@ -38,7 +38,7 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 2138677392}
-  m_IndirectSpecularColor: {r: 0.28391618, g: 0.37050468, b: 0.50067353, a: 1}
+  m_IndirectSpecularColor: {r: 0.28429282, g: 0.37092978, b: 0.4999446, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -249,7 +249,7 @@ Transform:
   m_GameObject: {fileID: 662776018}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 0.7071068, z: -0, w: 0.7071068}
-  m_LocalPosition: {x: 0, y: 0, z: 32}
+  m_LocalPosition: {x: 0, y: 0, z: 16}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -280,7 +280,7 @@ Transform:
   m_GameObject: {fileID: 828698365}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 32, y: 0, z: 0}
+  m_LocalPosition: {x: 16, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -421,9 +421,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   voxTexSize: 128
-  voxSize: 0.5
+  voxSize: 0.25
   lodLevels: 7
-  indirectLightStrength: 1
+  indirectLightStrength: 0.5
   manageVoxelDataCS: {fileID: 7200000, guid: 86106b4d96175364991387f58169f984, type: 3}
   LookUpTrans: {fileID: 1228891979}
   LookForwardTrans: {fileID: 828698366}
@@ -471,7 +471,7 @@ Transform:
   m_GameObject: {fileID: 1228891978}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 0.7071068, z: 0.7071068, w: 0}
-  m_LocalPosition: {x: 32, y: -32, z: 32}
+  m_LocalPosition: {x: 16, y: -16, z: 16}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -607,7 +607,7 @@ Transform:
   m_GameObject: {fileID: 1687258581}
   serializedVersion: 2
   m_LocalRotation: {x: 0.0013088372, y: 0.9998785, z: -0.015532791, w: 0.000020332363}
-  m_LocalPosition: {x: 14.7, y: -3.8, z: 31}
+  m_LocalPosition: {x: 14.7, y: -3.8, z: 31.9}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -672,6 +672,8 @@ MonoBehaviour:
   oneCycleTime: 0.02
   axis: 1
   otherAxisValue: 0
+  baseLightStrength: 15
+  lightStrengthAmplitude: 10
 --- !u!1 &2138677391
 GameObject:
   m_ObjectHideFlags: 0
@@ -761,13 +763,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 2138677391}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.7265439, y: -0.49855235, z: 0.28375024, w: 0.37823984}
+  m_LocalRotation: {x: 0.35733742, y: -0.27041355, z: 0.5049788, w: 0.7376875}
   m_LocalPosition: {x: 8.33, y: 9.31, z: 11.19}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 123.63901, y: -3.64, z: 66.965}
+  m_LocalEulerAnglesHint: {x: 53.16, y: -3.64, z: 66.965}
 --- !u!114 &2138677394
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -806,6 +808,8 @@ MonoBehaviour:
   oneCycleTime: 30
   axis: 1
   otherAxisValue: 75
+  baseLightStrength: 15
+  lightStrengthAmplitude: 0
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

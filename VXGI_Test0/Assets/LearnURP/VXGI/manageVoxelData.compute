@@ -1,5 +1,6 @@
 // Each #kernel tells which function to compile; you can have many kernels
 #pragma kernel Clear
+#pragma kernel TemporalMix
 #pragma kernel CalculateLOD
 
 // Create a RenderTexture with enableRandomWrite flag and set it
@@ -23,6 +24,15 @@ void Clear (uint3 id : SV_DispatchThreadID)
     VoxelTexture[idx].arm.xyz = 0;
     VoxelTexture[idx].emit.xyz = 0;
     //VoxelTexture[idx].col.xyz = float3(id.x / 256.0f, id.y / 256.0f, id.z / 256.0f);
+}
+
+// 将这一帧的体素颜色和上一帧的体素颜色混合
+[numthreads(8,8,8)]
+void TemporalMix (uint3 id : SV_DispatchThreadID)
+{
+    int idx = visitVoxIndex(id, voxTexSize);
+    VoxelTexture[idx].col.xyz = VoxelTexture[idx].col.xyz * 0.1 + VoxelTexture[idx].lastCol.xyz * 0.9;
+    VoxelTexture[idx].lastCol.xyz = VoxelTexture[idx].col.xyz;
 }
 
 // 计算LOD

@@ -5,9 +5,11 @@ Shader "LearnURP/ConeTracing"
         _BaseMap ("Base Texture",2D) = "white"{}
         _BaseColor("Base Color",Color)=(1,1,1,1)
         _Roughness ("Roughness Texture",2D) = "black"{}
+        _RoughnessScale("Roughness Scale", Float) = 1.0
         _Normal ("Normal Texture",2D) = "Bump"{}
         _NormalScale ("Normal Scale", Float) = 1.0
         _Metallic ("Metallic Texture",2D) = "white"{}
+        _MetallicScale("_Metallic Scale", Float) = 1.0
         _AmbientOcclusion ("Ambient Occlusion Texture",2D) = "white"{}
         _SpecularColor("Specular Color",Color)=(1,1,1,1)
         _Smoothness("Smoothness", Float) = 0.5
@@ -15,6 +17,8 @@ Shader "LearnURP/ConeTracing"
         _EmitionStrength("Emit Strength", Float) = 1.0
         _WhiteNoise0("White Noise 0", 2D) = "white"{}
         _SkyboxCubeMap("Skybox Cube Map", Cube) = "white"{}
+        
+        [KeywordEnum(ON, OFF)] _CONSERV_RASTER("CONSERV_RASTERIZATION", Float) = 0
         
         //_IndirectLightStrength("Indirect Light Strength", Float) = 1.0
     }
@@ -31,14 +35,18 @@ Shader "LearnURP/ConeTracing"
         #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
         
         #include "Assets/LearnURP/VXGI/voxelData.hlsl"
+
+        #pragma multi_compile _CONSERV_RASTER_ON _CONSERV_RASTER_OFF
         
         CBUFFER_START(UnityPerMaterial)
         float4 _BaseMap_ST;
         half4 _BaseColor;
         float4 _Roughness_ST;
+        float _RoughnessScale;
         float4 _Normal_ST;
         float _NormalScale;
         float4 _Metallic_ST;
+        float _MetallicScale;
         float4 _AmbientOcclusion_ST;
         
         half4 _SpecularColor;
@@ -218,7 +226,7 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
         }
         float3 GetRoughness(float2 uv)
         {
-            return SAMPLE_TEXTURE2D(_Roughness, sampler_Roughness, uv).xyz;
+            return _RoughnessScale * SAMPLE_TEXTURE2D(_Roughness, sampler_Roughness, uv).xyz;
         }
         float3 GetNormalTS(float2 uv)
         {
@@ -230,7 +238,7 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
         }
         float3 GetMetallic(float2 uv)
         {
-            return SAMPLE_TEXTURE2D(_Metallic, sampler_Metallic, uv);
+            return _MetallicScale * SAMPLE_TEXTURE2D(_Metallic, sampler_Metallic, uv);
         }
         float GetAO(float2 uv)
         {
@@ -368,6 +376,7 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 //color = SampleSH(IN.normalWS);
                 
                 //color = SAMPLE_TEXTURECUBE(unity_SpecCube0, samplerunity_SpecCube0, IN.normalWS);
+                //color = VoxelTexture[visId].col;
 
                 return float4(color.xyz, 1);
             }
@@ -419,6 +428,11 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 float4 positionWS : TEXCOORD3;  // xyz表示世界空间位置，w表示世界空间深度（基于对应的正交投影面）
                 float4 shadowCoord : TEXCOORD4;
                 float4 tangentWS : TEXCOORD5;
+                #ifdef _CONSERV_RASTER_ON
+                float4 triangleAABB : TEXCOORD6;
+                float4 screenPos : TEXCOORD7;
+                #endif
+                
             };
 
             // 顶点着色器
@@ -462,13 +476,50 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                     viewMat = LookForwardViewMat;
                     projDir = 2;
                 }
+
+                #ifdef _CONSERV_RASTER_ON
                 // 先计算一个三角形的包围盒
                 float4 triangleAABB = float4(-100, 100, -100, 100); // x_min, x_max, y_min, y_max
+                float4 pCS[3];
+                float4 scrennPos[3];
+                for (int i = 0; i < 3; ++i)
+                {
+                    pCS[i] = mul(mul(VoxelAreaOrthoMat, viewMat), float4(IN[i].positionWS, 1.0));
+                    scrennPos[i] = ComputeScreenPos(pCS[i]);
+                    scrennPos[i] /= scrennPos[i].w;
+                }
                 
-                
+                // 计算三角形的屏幕空间位置的包围盒
+                triangleAABB.x = min(min(scrennPos[0].x, scrennPos[1].x), scrennPos[2].x);
+                triangleAABB.y = max(max(scrennPos[0].x, scrennPos[1].x), scrennPos[2].x);
+                triangleAABB.z = min(min(scrennPos[0].y, scrennPos[1].y), scrennPos[2].y);
+                triangleAABB.w = max(max(scrennPos[0].y, scrennPos[1].y), scrennPos[2].y);
+                // 判断三角形是顺时针还是逆时针
+                bool isClockWise = cross( float3(pCS[1].x - pCS[0].x, 0, pCS[1].z - pCS[0].z), float3(pCS[2].x - pCS[0].x, 0, pCS[2].z - pCS[0].z) ).y >= 0 ? true : false;
+                // 计算三向边法线
+                float2 edgeNormalCS[3];
+                edgeNormalCS[0] = normalize(pCS[0].xy - pCS[1].xy).yx; edgeNormalCS[0].x = -edgeNormalCS[0].x; edgeNormalCS[0] *= isClockWise ? -1 : 1; 
+                edgeNormalCS[1] = normalize(pCS[1].xy - pCS[2].xy).yx; edgeNormalCS[1].x = -edgeNormalCS[1].x; edgeNormalCS[1] *= isClockWise ? -1 : 1; 
+                edgeNormalCS[2] = normalize(pCS[2].xy - pCS[0].xy).yx; edgeNormalCS[2].x = -edgeNormalCS[2].x; edgeNormalCS[2] *= isClockWise ? -1 : 1; 
+                // 计算三个点法线
+                float2 pointNormalCS[3];
+                pointNormalCS[0] = normalize(edgeNormalCS[0] + edgeNormalCS[2]);
+                pointNormalCS[1] = normalize(edgeNormalCS[0] + edgeNormalCS[1]);
+                pointNormalCS[2] = normalize(edgeNormalCS[1] + edgeNormalCS[2]);
+                // 三个点沿着法线前进
+                float unitPixSize = 0.1 / voxTexSize;
+                pCS[0].xy += pCS[0].w * pointNormalCS[0] * unitPixSize / sqrt((dot(edgeNormalCS[0], edgeNormalCS[2]) + 1) / 2.0);
+                pCS[1].xy += pCS[1].w * pointNormalCS[1] * unitPixSize / sqrt((dot(edgeNormalCS[0], edgeNormalCS[1]) + 1) / 2.0);
+                pCS[2].xy += pCS[2].w * pointNormalCS[2] * unitPixSize / sqrt((dot(edgeNormalCS[1], edgeNormalCS[2]) + 1) / 2.0);
+                #endif
+                    
                 for (int i = 0; i < 3; i++)
                 {
+                    #ifdef _CONSERV_RASTER_ON
+                    OUT.positionCS = pCS[i];
+                    #else
                     OUT.positionCS = mul(mul(VoxelAreaOrthoMat, viewMat), float4(IN[i].positionWS, 1.0));
+                    #endif
                     //OUT.positionCS = TransformWorldToHClip(float4(IN[i].positionWS, 1.0));
                     OUT.normalWS = IN[i].normalWS;
                     OUT.viewDirWS = IN[i].viewDirWS;
@@ -476,7 +527,12 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                     OUT.positionWS = float4(IN[i].positionWS, 0.0f);
                     OUT.shadowCoord = IN[i].shadowCoord;
                     OUT.tangentWS = IN[i].tangentWS;
-
+                
+                    #ifdef _CONSERV_RASTER_ON
+                    OUT.triangleAABB = triangleAABB;
+                    OUT.screenPos = ComputeScreenPos(OUT.positionCS);
+                    #endif
+                
                     // 计算深度
                     if (projDir == 0)
                         OUT.positionWS.w = OUT.positionWS.x - (manualCameraPos.x - voxTexSize * voxSize / 2.0f);
@@ -493,26 +549,13 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
             // 片元着色器
             float4 frag (Varings IN) : SV_Target
             {
-                // 先进行正常的渲染
-                // sample the texture and color
-                // 先进行正常的渲染
-                // sample the texture and color
-                half4 baseMap = (SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv));
-                half4 specularColor = (_SpecularColor);
+                /*// 剔除
+                half2 screen_uv = IN.screenPos.xy / IN.screenPos.w;
                 
-                Light light = GetMainLight();
-                float3 lightDirWS = light.direction;
-                float3 viewDirWS = GetCameraPositionWS() - IN.positionWS;
-
-                half3 albedo = baseMap.xyz*_BaseColor;
-
-                half3 diffuse = albedo * LightingLambert(light.color, light.direction, IN.normalWS);
-                
-                float3 halfVec = SafeNormalize(normalize(lightDirWS) + normalize(viewDirWS));
-                half NdotH = saturate(dot(normalize(IN.normalWS), halfVec));
-                half3 specular = light.color * specularColor.rgb * pow(NdotH, _Smoothness);
-
-                float3 color = diffuse;// + specular;
+                clip(screen_uv.x - IN.triangleAABB.x);
+                clip(screen_uv.y - IN.triangleAABB.y);
+                clip(IN.triangleAABB.z - screen_uv.x);
+                clip(IN.triangleAABB.w - screen_uv.y);*/
 
                 
                 // PBR，启动！
@@ -527,34 +570,11 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 // AO
                 float ambientOcclusion = GetAO(IN.uv);
 
-                /*
-                // 变换到切线空间计算
-                real3x3 T2W_MATRIX = CreateTangentToWorld(IN.normalWS, IN.tangentWS.xyz, IN.tangentWS.w);
-                real3x3 W2T_MATRIX = Inverse(real4x4(
-                                                        float4(T2W_MATRIX[0], 0),
-                                                        float4(T2W_MATRIX[1], 0),
-                                                        float4(T2W_MATRIX[2], 0),
-                                                        float4(0,   0,   0,   1)));
-                float3 lightDirTS = normalize(mul(light.direction, W2T_MATRIX));
-                float3 viewDirTS = normalize(mul(IN.viewDirWS, W2T_MATRIX));
-                float3 halfDirTS = normalize(lightDirTS + viewDirTS);
-
-                // 计算BRDF颜色
-                float3 brdf = BRDF(lightDirTS,viewDirTS, normalTS, baseColor, metallic, roughness);
-                // 渲染方程
-                float3 Lo = light.distanceAttenuation * light.color.rgb * max(dot(lightDirTS, normalTS), 0) * brdf;
-                */
-
-                /*Lo = DirectPBR(dot(normalTS, lightDirTS), dot(normalTS, viewDirTS), dot(normalTS, halfDirTS), dot(halfDirTS, viewDirTS),
-                    baseColor, metallic, roughness, float3(0.04f, 0.04f, 0.04f), light.color);*/
-
-                color = baseColor;
+                float3 color = baseColor;
 
                 
                 float shadow = MainLightRealtimeShadow(TransformWorldToShadowCoord(IN.positionWS));
                 color *= shadow;
-                // 自发光
-                //color += _EmitionCol * _EmitionStrength;
 
                 // 根据世界空间位置写入VoxelTexrure
                 // 计算VoxelTexture所需id
@@ -777,7 +797,13 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                     float3 cur_color = 0;
                     dirColors[i] = 0;
                     
-                    marchPos[i] = IN.positionWS;// + 0.415 * voxSize * dir[i];    // 初始化
+                    marchPos[i] = IN.positionWS;    // 初始化
+                    #ifdef _CONSERV_RASTER_ON
+                    marchPos[i] += VoxelTexture[visId].flags.x > 0 ? 1.1 * voxSize * IN.normalWS : 0;
+                    #else
+                    marchPos[i] += 0.415 * voxSize * dir[i];
+                    #endif
+                    
                     // 步进
                     // 初始步进距离：根号3 / 2 * 最小体素边长
                     // 每次步进都将步进距离翻倍
@@ -899,16 +925,20 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 }
                 i_color /= 7.0f;
 
-                // 调一下强度
-                i_color *= _IndirectLightStrength;
                 // clamp一下，避免过亮或过暗
                 float i_lum = Luminance(i_color);
-                if (i_lum >= 5)
+                if (i_lum >= 3)
                 {
-                    i_color *= 5.0 / i_lum;
+                    i_color *= 3.0 / i_lum;
+                }
+                if (i_lum < 0.01)
+                {
+                    i_color *= 0.01 / i_lum;
                 }
                 // 神奇的是：notEndCnt可以部分代表AO
                 //i_color *= pow(notEndCnt / 7.0f, 0.1);
+                // 调一下强度
+                i_color *= _IndirectLightStrength;
                 
 
                 // 部分吸收

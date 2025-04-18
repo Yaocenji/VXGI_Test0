@@ -68,7 +68,7 @@ Shader "LearnURP/VXGITemporalFilter"
                     color = curCol;
                 else
                 {
-                    if (length(curCol - lastCol) > 0.005)
+                    //if (length(curCol - lastCol) > 0.005)
                         color = 0.1 * curCol + 0.9 * lastCol;
                 }
 

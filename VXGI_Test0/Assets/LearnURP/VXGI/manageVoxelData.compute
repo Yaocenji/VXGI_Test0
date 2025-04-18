@@ -26,13 +26,19 @@ void Clear (uint3 id : SV_DispatchThreadID)
     //VoxelTexture[idx].col.xyz = float3(id.x / 256.0f, id.y / 256.0f, id.z / 256.0f);
 }
 
+float3 zeroPosMoveVec;
+float voxSize;
 // 将这一帧的体素颜色和上一帧的体素颜色混合
 [numthreads(8,8,8)]
 void TemporalMix (uint3 id : SV_DispatchThreadID)
 {
-    int idx = visitVoxIndex(id, voxTexSize);
-    VoxelTexture[idx].col.xyz = VoxelTexture[idx].col.xyz * 0.1 + VoxelTexture[idx].lastCol.xyz * 0.9;
-    VoxelTexture[idx].lastCol.xyz = VoxelTexture[idx].col.xyz;
+    int3 oldId = int3(id) + int3(zeroPosMoveVec / voxSize);
+    if (oldId.x < 0 || oldId.x >= voxTexSize || oldId.y < 0 || oldId.y >= voxTexSize || oldId.z < 0 || oldId.z >= voxTexSize)
+        return;
+    uint idx = visitVoxIndex(id, voxTexSize);
+    uint oldIdx = visitVoxIndex(uint3(oldId), voxTexSize);
+    VoxelTexture[idx].col.xyz = VoxelTexture[idx].col.xyz * 0.1 + VoxelTexture[(oldIdx)].lastCol.xyz * 0.9;
+    VoxelTexture[oldIdx].lastCol.xyz = VoxelTexture[idx].col.xyz;
 }
 
 // 计算LOD

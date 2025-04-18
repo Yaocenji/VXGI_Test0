@@ -63,7 +63,7 @@ public class VoxelGI : MonoBehaviour
     // 一张三维纹理（表面是三维纹理，实际上是一维的计算buffer）
     public ComputeBuffer voxelBuffer;
     // 体素零点
-    private Vector3 zeroPos;
+    [NonSerialized] public Vector3 zeroPos;
     // 体素中心
     private Vector3 centerPos => zeroPos + voxAreaSize / 2.0f * Vector3.one;
     
@@ -144,7 +144,7 @@ public class VoxelGI : MonoBehaviour
         zeroPos = camTrans.position -
                   new Vector3(voxTexSize * voxSize / 2.0f, voxTexSize * voxSize / 2.0f,
                       voxTexSize * voxSize / 2.0f);
-        float unit = voxSize * Mathf.Pow(2, lodLevels - 1);
+        float unit = voxSize * Mathf.Pow(2, lodLevels - 3);
         zeroPos.x = (int)(zeroPos.x / unit) * unit;
         zeroPos.y = (int)(zeroPos.y / unit) * unit;
         zeroPos.z = (int)(zeroPos.z / unit) * unit;

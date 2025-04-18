@@ -15,14 +15,23 @@ public class VoxelTemporalMixRenderFeature : ScriptableRendererFeature
         
         public ComputeShader manageVoxelDataCS;
         private int temporalMixKernel;
+
+        private Vector3 lastZeroPos;
+        private Vector3 zeroPosMoveVec;
         
         public override void OnCameraSetup(CommandBuffer cmd, ref RenderingData renderingData)
         {
+            zeroPosMoveVec = (VoxelGI.instance.zeroPos - lastZeroPos);
+            if (zeroPosMoveVec.x != 0 || zeroPosMoveVec.y != 0 || zeroPosMoveVec.z != 0)
+                Debug.Log(zeroPosMoveVec);
+            
             // 在这里进行时间算法
             temporalMixKernel = manageVoxelDataCS.FindKernel("TemporalMix");
             manageVoxelDataCS.SetBuffer(temporalMixKernel, "VoxelTexture", VoxelGI.instance.voxelBuffer);
             manageVoxelDataCS.SetInt("voxTexSize", VoxelGI.instance.voxTexSize);
             //manageVoxelDataCS.Dispatch(temporalMixKernel, VoxelGI.instance.voxTexSize / 8, VoxelGI.instance.voxTexSize / 8, VoxelGI.instance.voxTexSize / 8);
+            manageVoxelDataCS.SetVector("zeroPosMoveVec", zeroPosMoveVec);
+            manageVoxelDataCS.SetFloat("voxSize", VoxelGI.instance.voxSize); 
         }
         
         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
@@ -40,6 +49,7 @@ public class VoxelTemporalMixRenderFeature : ScriptableRendererFeature
         // Cleanup any allocated resources that were created during the execution of this render pass.
         public override void OnCameraCleanup(CommandBuffer cmd)
         {
+            lastZeroPos = VoxelGI.instance.zeroPos;
         }
     }
 

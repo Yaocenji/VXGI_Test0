@@ -2,23 +2,38 @@ Shader "LearnURP/ConeTracing"
 {
     Properties
     {
+        [KeywordEnum(ON, OFF)] _CONSERV_RASTER("CONSERV_RASTERIZATION", Float) = 0
+        
         _BaseMap ("Base Texture",2D) = "white"{}
         _BaseColor("Base Color",Color)=(1,1,1,1)
+        
+        _MaskMap("Mask Map", 2D) = "white"{}
+        [KeywordEnum(OFF, ON)] _USE_PBR_MASK_TEXTURE("USE PBR MASK TEXTURE", Float) = 0
+        [KeywordEnum(R, G, B, A)] _MASK_CHANNEL_ROUGHNESS("MASK CHANNEL ROUGHNESS", Float) = 0
+        [KeywordEnum(R, G, B, A)] _MASK_CHANNEL_METALLIC("MASK CHANNEL METALLIC", Float) = 0
+        [KeywordEnum(R, G, B, A)] _MASK_CHANNEL_AO("MASK CHANNEL AO", Float) = 0
+        
         _Roughness ("Roughness Texture",2D) = "black"{}
         _RoughnessScale("Roughness Scale", Float) = 1.0
+        _RoughnessInverse("Roughness Inverse", Int) = 1
+        
         _Normal ("Normal Texture",2D) = "Bump"{}
         _NormalScale ("Normal Scale", Float) = 1.0
+        
         _Metallic ("Metallic Texture",2D) = "white"{}
         _MetallicScale("_Metallic Scale", Float) = 1.0
+        
         _AmbientOcclusion ("Ambient Occlusion Texture",2D) = "white"{}
-        _SpecularColor("Specular Color",Color)=(1,1,1,1)
-        _Smoothness("Smoothness", Float) = 0.5
+        
+        _Emit("Emit Texture", 2D) = "white"{}
         _EmitionCol("Emit Color",Color)=(0,0, 0, 0)
         _EmitionStrength("Emit Strength", Float) = 1.0
+        
+        _SpecularColor("Specular Color",Color)=(1,1,1,1)
+        _Smoothness("Smoothness", Float) = 0.5
         _WhiteNoise0("White Noise 0", 2D) = "white"{}
         _SkyboxCubeMap("Skybox Cube Map", Cube) = "white"{}
         
-        [KeywordEnum(ON, OFF)] _CONSERV_RASTER("CONSERV_RASTERIZATION", Float) = 0
         
         //_IndirectLightStrength("Indirect Light Strength", Float) = 1.0
     }
@@ -36,6 +51,13 @@ Shader "LearnURP/ConeTracing"
         
         #include "Assets/LearnURP/VXGI/voxelData.hlsl"
 
+        // 是否使用多通道MASK纹理替代单通道PBR纹理
+        #pragma multi_compile _USE_PBR_MASK_TEXTURE_ON _USE_PBR_MASK_TEXTURE_OFF
+        //
+        #pragma multi_compile _MASK_CHANNEL_ROUGHNESS_R _MASK_CHANNEL_ROUGHNESS_G _MASK_CHANNEL_ROUGHNESS_B _MASK_CHANNEL_ROUGHNESS_A
+        #pragma multi_compile _MASK_CHANNEL_METALLIC_R _MASK_CHANNEL_METALLIC_G _MASK_CHANNEL_METALLIC_B _MASK_CHANNEL_METALLIC_A
+        #pragma multi_compile _MASK_CHANNEL_AO_R _MASK_CHANNEL_AO_G _MASK_CHANNEL_AO_B _MASK_CHANNEL_AO_A
+
         #pragma multi_compile _CONSERV_RASTER_ON _CONSERV_RASTER_OFF
         
         CBUFFER_START(UnityPerMaterial)
@@ -43,6 +65,7 @@ Shader "LearnURP/ConeTracing"
         half4 _BaseColor;
         float4 _Roughness_ST;
         float _RoughnessScale;
+        int _RoughnessInverse;
         float4 _Normal_ST;
         float _NormalScale;
         float4 _Metallic_ST;
@@ -141,63 +164,6 @@ Shader "LearnURP/ConeTracing"
 
             return BRDF_Specular + BRDF_Diffuse;
         }
-
-//D项
-float DistributionGGX(float3 NdotH, float roughness)
-{
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float NdotH2 = NdotH * NdotH;
-
-    float nom = a2;
-    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    denom = PI * denom * denom;
-
-    return nom / denom;
-}
-//G项
-float GeometrySchlickGGX(float cosTheta, float k)
-{
-    float nom = cosTheta;
-    float denom = cosTheta * (1.0 - k) + k;
-    return nom / (denom + 1e-5f);
-}
-//G项考虑视线方向和光照方向
-float GeometrySmith(float NdotV,float NdotL ,float roughness)
-{
-    float r = (roughness + 1.0);
-    float k = (r * r) / 8.0;
-    float ggx2 = GeometrySchlickGGX(NdotV, k);
-    float ggx1 = GeometrySchlickGGX(NdotL, k);
-    return ggx1 * ggx2;
-}
-//F项
-float3 FresnelTerm(float3 F0, float cosA)
-{
-    half t = pow(1 - cosA,5.0); 
-    return F0 + (1 - F0) * t;
-}
-
-
-//直接光照计算
-float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalness,float roughness,float3 f0,float3 lightColor)
-{
-    float dTerm = DistributionGGX(nh, roughness);
-    float gTerm = GeometrySmith(nl, nv, roughness);
-    float3 fTerm = FresnelTerm(f0, hv);
-    //max 0.001 保证分母不为0
-    float3 specular = dTerm * gTerm * fTerm / (4.0 * max(nv * nl, 0.001));
-    //我们按照能量守恒的关系，首先计算镜面反射部分，它的值等于入射光线被反射的能量所占的百分比。
-    float3 kS = fTerm;
-    //然后折射光部分就可以直接由镜面反射部分计算得出：
-    float3 kD = (1.0 - kS) ;
-    //金属是没有漫反射的,所以Kd需要乘上1-metalness
-    kD *= 1.0 - metalness;
-    //除π是为了能量守恒，但Unity也没有除以π，应该是觉得除以π后太暗，所以我们这里也先不除
-    float3 diffuse = kD * albedo;// *INV_PI;
-    float3 result = (diffuse + specular) * nl * lightColor;
-    return (result);
-}
         
         float Clamp(float x, float l, float r)
         {
@@ -210,10 +176,12 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
 
         
         TEXTURE2D(_BaseMap); SAMPLER(sampler_BaseMap);
+        TEXTURE2D(_MaskMap); SAMPLER(sampler_MaskMap);
         TEXTURE2D(_Roughness); SAMPLER(sampler_Roughness);
         TEXTURE2D(_Normal); SAMPLER(sampler_Normal);
         TEXTURE2D(_Metallic); SAMPLER(sampler_Metallic);
         TEXTURE2D(_AmbientOcclusion); SAMPLER(sampler_AmbientOcclusion);
+        TEXTURE2D(_Emit); SAMPLER(sampler_Emit);
         
         TEXTURE2D(_WhiteNoise0); SAMPLER(sampler_WhiteNoise0);
         TEXTURECUBE(_SkyboxCubeMap); SAMPLER(sampler_SkyboxCubeMap);
@@ -226,7 +194,25 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
         }
         float3 GetRoughness(float2 uv)
         {
-            return _RoughnessScale * SAMPLE_TEXTURE2D(_Roughness, sampler_Roughness, uv).xyz;
+            float3 ans;
+            
+    #ifdef _USE_PBR_MASK_TEXTURE_OFF
+            ans = SAMPLE_TEXTURE2D(_Roughness, sampler_Roughness, uv).xyz;
+    #else
+        #ifdef _MASK_CHANNEL_ROUGHNESS_R
+            ans = SAMPLE_TEXTURE2D(_MaskMap, sampler_MaskMap, uv).r;
+        #elif _MASK_CHANNEL_ROUGHNESS_G
+            ans = SAMPLE_TEXTURE2D(_MaskMap, sampler_MaskMap, uv).g;
+        #elif _MASK_CHANNEL_ROUGHNESS_B
+            ans = SAMPLE_TEXTURE2D(_MaskMap, sampler_MaskMap, uv).b;
+        #elif _MASK_CHANNEL_ROUGHNESS_A
+            ans = SAMPLE_TEXTURE2D(_MaskMap, sampler_MaskMap, uv).a;
+        #endif
+
+    #endif
+            
+            ans *= _RoughnessScale;
+            return _RoughnessInverse == 0 ? ans : 1 - ans;
         }
         float3 GetNormalTS(float2 uv)
         {
@@ -238,11 +224,49 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
         }
         float3 GetMetallic(float2 uv)
         {
-            return _MetallicScale * SAMPLE_TEXTURE2D(_Metallic, sampler_Metallic, uv);
+            float3 ans;
+            
+    #ifdef _USE_PBR_MASK_TEXTURE_OFF
+            ans = SAMPLE_TEXTURE2D(_Metallic, sampler_Metallic, uv);
+    #else
+        #ifdef _MASK_CHANNEL_METALLIC_R
+            ans = SAMPLE_TEXTURE2D(_MaskMap, sampler_MaskMap, uv).r;
+        #elif _MASK_CHANNEL_METALLIC_G
+            ans = SAMPLE_TEXTURE2D(_MaskMap, sampler_MaskMap, uv).g;
+        #elif _MASK_CHANNEL_METALLIC_B
+            ans = SAMPLE_TEXTURE2D(_MaskMap, sampler_MaskMap, uv).b;
+        #elif _MASK_CHANNEL_METALLIC_A
+            ans = SAMPLE_TEXTURE2D(_MaskMap, sampler_MaskMap, uv).a;
+        #endif
+
+    #endif
+            
+            ans *= _MetallicScale;
+            return  ans;
         }
         float GetAO(float2 uv)
         {
-            return SAMPLE_TEXTURE2D(_AmbientOcclusion, sampler_AmbientOcclusion, uv).x;
+            float ans;
+    #ifdef _USE_PBR_MASK_TEXTURE_OFF
+            ans = SAMPLE_TEXTURE2D(_AmbientOcclusion, sampler_AmbientOcclusion, uv).x;
+    #else
+        #ifdef _MASK_CHANNEL_AO_R
+            ans = SAMPLE_TEXTURE2D(_MaskMap, sampler_MaskMap, uv).r;
+        #elif _MASK_CHANNEL_AO_G
+            ans = SAMPLE_TEXTURE2D(_MaskMap, sampler_MaskMap, uv).g;
+        #elif _MASK_CHANNEL_AO_B
+            ans = SAMPLE_TEXTURE2D(_MaskMap, sampler_MaskMap, uv).b;
+        #elif _MASK_CHANNEL_AO_A
+            ans = SAMPLE_TEXTURE2D(_MaskMap, sampler_MaskMap, uv).a;
+        #endif
+
+    #endif
+            
+            return ans;
+        }
+        float3 GetEmit(float2 uv)
+        {
+            return _EmitionStrength * SAMPLE_TEXTURE2D(_Emit, sampler_Emit, uv).xyz * _EmitionCol;
         }
         
         ENDHLSL
@@ -337,6 +361,8 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 float3 metallic = GetMetallic(IN.uv);
                 // AO
                 float ambientOcclusion = GetAO(IN.uv);
+                // 自发光
+                float3 emit = GetEmit(IN.uv);
 
                 // 变换到切线空间计算
                 real3x3 T2W_MATRIX = CreateTangentToWorld(IN.normalWS, IN.tangentWS.xyz, IN.tangentWS.w);
@@ -362,8 +388,22 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 float shadow = MainLightRealtimeShadow(TransformWorldToShadowCoord(IN.positionWS));
                 color *= shadow;
 
+                // 多光源
+                int pixelLightCount = GetAdditionalLightsCount();
+                for (int i = 0; i < pixelLightCount; ++i)
+                {
+                    Light curLight = GetAdditionalLight(i, IN.positionWS);
+                    float3 curLightDirTS= normalize(mul(curLight.direction, W2T_MATRIX));
+                    // 计算BRDF颜色
+                    float3 curBrdf = BRDF(curLightDirTS,viewDirTS, normalTS, baseColor * ambientOcclusion, metallic, roughness);
+                    // 渲染方程
+                    float3 curLo = curLight.distanceAttenuation * curLight.color.rgb * max(dot(curLightDirTS, normalTS), 0) * curBrdf;
+
+                    color += curLo;
+                }
+
                 // 自发光
-                color += _EmitionCol * _EmitionStrength;
+                color += emit;
 
 
                 // debug 
@@ -569,12 +609,15 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 float3 metallic = GetMetallic(IN.uv);
                 // AO
                 float ambientOcclusion = GetAO(IN.uv);
-
+                // 自发光
+                float3 emit = GetEmit(IN.uv);
+                
                 float3 color = baseColor;
 
                 
-                float shadow = MainLightRealtimeShadow(TransformWorldToShadowCoord(IN.positionWS));
-                color *= shadow;
+                /*float shadow = MainLightRealtimeShadow(TransformWorldToShadowCoord(IN.positionWS));
+                color *= shadow;*/
+
 
                 // 根据世界空间位置写入VoxelTexrure
                 // 计算VoxelTexture所需id
@@ -589,7 +632,7 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 float3 curARM = float3(ambientOcclusion, roughness.x, metallic.x);
                 VoxelTexture[visitVoxIndex(id, voxTexSize)].arm =  (curARM + curr_flag_x * VoxelTexture[visitVoxIndex(id, voxTexSize)].arm) / float(curr_flag_x + 1);
 
-                float3 curEmit = _EmitionCol * _EmitionStrength;
+                float3 curEmit = emit;
                 VoxelTexture[visitVoxIndex(id, voxTexSize)].emit =  (curEmit + curr_flag_x * VoxelTexture[visitVoxIndex(id, voxTexSize)].emit) / float(curr_flag_x + 1);
                 
                 VoxelTexture[visitVoxIndex(id, voxTexSize)].norm = normalize(normalize(IN.normalWS) + curr_flag_x * VoxelTexture[visitVoxIndex(id, voxTexSize)].norm);
@@ -680,32 +723,10 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                 uint3 id = getId(GetCameraPositionWS(), IN.positionWS, voxTexSize, voxSize);
                 VIS_VOX_IDX(id);
                 
-                // 先进行正常的渲染
-                // sample the texture and color
-                half4 baseMap = (SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv));
-                half4 specularColor = (_SpecularColor);
-                
                 Light light = GetMainLight();
-                float3 lightDirWS = light.direction;
-                float3 viewDirWS = GetCameraPositionWS() - IN.positionWS;
 
-                half3 albedo = baseMap.xyz*_BaseColor;
+                float3 color = 0;
 
-                half3 diffuse = albedo * LightingLambert(light.color, light.direction, IN.normalWS);
-                
-                float3 halfVec = SafeNormalize(normalize(lightDirWS) + normalize(viewDirWS));
-                half NdotH = saturate(dot(normalize(IN.normalWS), halfVec));
-                half3 specular = light.color * specularColor.rgb * pow(NdotH, _Smoothness);
-
-                float3 color = diffuse;// + specular;
-                float shadow = MainLightRealtimeShadow(TransformWorldToShadowCoord(IN.positionWS));
-                color *= shadow;
-
-                // 自发光
-                color += _EmitionCol * _EmitionStrength;
-
-
-                
                 // PBR，启动！
                 // albedo
                 float3 baseColor = GetAlbedo(IN.uv);
@@ -800,8 +821,8 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                     marchPos[i] = IN.positionWS;    // 初始化
                     #ifdef _CONSERV_RASTER_ON
                     marchPos[i] += VoxelTexture[visId].flags.x > 0 ? 1.1 * voxSize * IN.normalWS : 0;
-                    #else
-                    marchPos[i] += 0.51 * voxSize * IN.normalWS;
+                    #elif _CONSERV_RASTER_OFF
+                    marchPos[i] += 1.74 * voxSize * IN.normalWS;
                     #endif
                     
                     // 步进
@@ -821,7 +842,7 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                     for (int lodLevel = 0; lodLevel < _LodLevel; ++lodLevel)
                     {
                         if (weight <= 0.01) break;
-                        
+                        // 体素位置
                         marchPos[i] += marchDist * dir[i];
                         // 将步进位置框在AABB内
                         marchPos[i].x = Clamp(marchPos[i].x, zeroPos.x, voxelAABBMaxPos.x);
@@ -872,8 +893,11 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                             float3 tmp_viewDirTS = normalize(mul(-dir[i], W2T_MATRIX_0));
                             
                             // 计算该光源到该像素的渲染BRDF
-                            float3 brdf0 = BRDF(light.direction, -dir[i], normalize(VoxelTexture[visId].norm), tmp_albedo * tmp_arm.r, tmp_arm.z, tmp_arm.y, tmp_arm.x);
+                            float3 brdf0 = BRDF(light.direction, -dir[i], normalize(VoxelTexture[visId].norm), tmp_albedo * tmp_arm.r, tmp_arm.z, tmp_arm.y, true);
                             float3 Lo0 = light.color * light.distanceAttenuation * max(dot(normalize(light.direction), tmp_norm), 0) * brdf0;
+                            // 阴影
+                            float shadow = MainLightRealtimeShadow(TransformWorldToShadowCoord(marchPos[i]));
+                            Lo0 *= shadow;
                             // 计算BRDF颜色
                             float3 brdf = BRDF(normalize(dirTS[i]),viewDirTS, normalTS, baseColor * ambientOcclusion, metallic, roughness);
                             // 渲染方程
@@ -897,6 +921,24 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                             
                             cur_color += Lo;// * volRatio;
 
+                            
+                            
+                            // 多光源
+                            int pixelLightCount = GetAdditionalLightsCount();
+                            for (int k = 0; k < pixelLightCount; ++k)
+                            {
+                                Light curLight = GetAdditionalLight(k, marchPos[i]);
+                                
+                                // 计算BRDF颜色
+                                float3 curBrdf0 = BRDF(curLight.direction,-dir[i], normalize(VoxelTexture[visId].norm), tmp_albedo * tmp_arm.r, tmp_arm.z, tmp_arm.y, true);
+                                // 渲染方程
+                                float3 curLo0 = curLight.distanceAttenuation * curLight.color.rgb * max(dot(curLight.direction, tmp_norm), 0) * curBrdf0;
+
+                                // 渲染方程
+                                cur_color += curLo0 * max(dot(normalize(dirTS[i]), normalTS), 0) * brdf;
+
+                            }
+
                         }
                         
                         marchDist *= 2;
@@ -909,11 +951,11 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
                     
                     /*if (weight > 0.01)
                         cur_color /= 1.0f - saturate(weight);*/
-                    cur_color /= sumWeight;
+                    cur_color /= sumWeight <= 0.01 ? 0.01 : sumWeight;
 
                     // 计算天空球环境光
                     half3 currAmbientCol = SAMPLE_TEXTURECUBE(_SkyboxCubeMap, sampler_SkyboxCubeMap, dir[i]);// 计算BRDF颜色
-                    float3 brdf = BRDF(normalize(dirTS[i]),viewDirTS, normalTS, baseColor * ambientOcclusion, metallic, roughness);
+                    float3 brdf = BRDF(normalize(dirTS[i]),viewDirTS, normalTS, baseColor, metallic, roughness);
                     // 渲染方程
                     float3 Lo = currAmbientCol * max(dot(normalize(dirTS[i]), normalTS), 0) * brdf;
                     //cur_color += currAmbientCol;
@@ -927,14 +969,14 @@ float3 DirectPBR(float nl,float nv,float nh,float hv,float3 albedo,float metalne
 
                 // clamp一下，避免过亮或过暗
                 float i_lum = Luminance(i_color);
-                if (i_lum >= 3)
+                if (i_lum >= 5)
                 {
-                    i_color *= 3.0 / i_lum;
+                    i_color *= 5.0 / i_lum;
                 }
-                if (i_lum < 0.01)
+                /*if (i_lum < 0.01)
                 {
                     i_color *= 0.01 / i_lum;
-                }
+                }*/
                 // 神奇的是：notEndCnt可以部分代表AO
                 //i_color *= pow(notEndCnt / 7.0f, 0.1);
                 // 调一下强度

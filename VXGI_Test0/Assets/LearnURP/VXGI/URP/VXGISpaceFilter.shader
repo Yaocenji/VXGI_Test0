@@ -63,7 +63,7 @@ Shader "LearnURP/VXGISpaceFilter"
 
                 // 先实现高斯
                 float3 ansCol = 0;
-                float sigma = 4;
+                float sigma = 2;
                 float weight, sumWeight = 0;
                 float dist2;
 

@@ -377,7 +377,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 3f0a3065fc4a39d42a5b0f544fb9f0d2, type: 2}
+  - {fileID: 2100000, guid: 29becafb1101f174697440580d082ceb, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -1046,7 +1046,7 @@ MonoBehaviour:
   voxTexSize: 128
   voxSize: 0.25
   lodLevels: 7
-  indirectLightStrength: 0.2
+  indirectLightStrength: 0.1
   manageVoxelDataCS: {fileID: 7200000, guid: 86106b4d96175364991387f58169f984, type: 3}
   LookUpTrans: {fileID: 1228891979}
   LookForwardTrans: {fileID: 828698366}
@@ -1951,7 +1951,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 3f0a3065fc4a39d42a5b0f544fb9f0d2, type: 2}
+  - {fileID: 2100000, guid: 29becafb1101f174697440580d082ceb, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -2440,7 +2440,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1687258581}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: be76e5f14cfee674cb30b491fb72b09b, type: 3}
   m_Name: 
@@ -2854,7 +2854,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 1795cb74a1c942f4f94f87e4eb406cc9, type: 2}
+  - {fileID: 2100000, guid: 29becafb1101f174697440580d082ceb, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -2974,7 +2974,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 56cb2cca9a3825d4abf01ce08e95849b, type: 2}
+  - {fileID: 2100000, guid: 29becafb1101f174697440580d082ceb, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -3348,8 +3348,8 @@ MonoBehaviour:
   oneCycleTime: 10
   axis: 1
   otherAxisValue: 45
-  baseLightStrength: 15
-  lightStrengthAmplitude: 10
+  baseLightStrength: 7
+  lightStrengthAmplitude: 0
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
